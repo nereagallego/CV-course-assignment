@@ -5,6 +5,7 @@ import numpy as np
 import cv2 as cv
 import glob
 import matplotlib.pyplot as plt
+import os
 
 
 
@@ -29,11 +30,13 @@ if __name__ == '__main__':
     # Arrays to store object points and image points from all the images.
     objpoints = [] # 3d point in real world space
     imgpoints = [] # 2d points in image plane.
-    images = glob.glob('calib_*.jpg')
+    
+    images = os.listdir('calibration')
+    print(images)
     #cv.namedWindow('img', cv.WINDOW_NORMAL)  # Create window with freedom of dimensions
     #cv.resizeWindow('img', 800, 600)
     for fname in images:
-        img = cv.imread(fname)
+        img = cv.imread('calibration/'+fname)
         img_rows = img.shape[1]
         img_cols = img.shape[0]
         new_img_size = (int(img_rows / image_downsize_factor), int(img_cols / image_downsize_factor))
