@@ -72,6 +72,8 @@ if __name__ == '__main__':
 
     print('The calibartion matrix is')
     print(mtx)
+    mtx = np.array(mtx)
+    np.savetxt('calibration_matrix.txt', mtx)
     print('The radial distortion parameters are')
     print(dist)
 
