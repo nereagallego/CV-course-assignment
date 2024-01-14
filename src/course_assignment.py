@@ -39,6 +39,13 @@ def indexMatrixToMatchesList(matchesList):
         dMatchesList.append(cv2.DMatch(_queryIdx=row[0], _trainIdx=row[1], _distance=row[2]))
     return dMatchesList
 
+def indexMatrixToMatchesList2(indexMatrix):
+    dMatchesList = []
+    for i in range(len(indexMatrix)):
+        if indexMatrix[i] != -1:
+            dMatchesList.append(cv2.DMatch(_queryIdx=i, _trainIdx=indexMatrix[i], _distance=0))
+    return dMatchesList
+
 def matchWith2NDRR_2(desc1, desc2, distRatio, minDist):
     """
     Nearest Neighbours Matching algorithm checking the Distance Ratio.
@@ -73,27 +80,18 @@ if __name__ == '__main__':
 
     print('Imgs loaded')
 
-    # Feature extraction
-    sift = cv2.SIFT_create(nfeatures=0, nOctaveLayers = 5, contrastThreshold = 0.02, edgeThreshold = 20, sigma = 0.5)
-    keypoints_sift_1, descriptors_1 = sift.detectAndCompute(img1, None)
-    keypoints_sift_2, descriptors_2 = sift.detectAndCompute(img2, None)
+    path = './output/img_new1_img_new2_matches.npz'
+    npz = np.load(path)
+    keypoints_SG_0 = npz['keypoints0']
+    keypoints_SG_1 = npz['keypoints1']
+    matchesListSG_0 = [i for i, x in enumerate(npz['matches']) if x != -1]
+    matchesListSG_1 = [x for i, x in enumerate(npz['matches']) if x != -1]
 
-    print('Number of keypoints in image 1: ', len(keypoints_sift_1))
-    print('Number of keypoints in image 2: ', len(keypoints_sift_2))
-
-    # Select a threshold to have a low false positive rate
-    distRatio = 0.99
-    minDist = 500
-    matchesList = matchWith2NDRR_2(descriptors_1, descriptors_2, distRatio, minDist)
-    dMatchesList = indexMatrixToMatchesList(matchesList)
-    dMatchesList = sorted(dMatchesList, key=lambda x: x.distance)
-
-    print('Number of matches: ', len(dMatchesList))
+    # Matched points from SuperGlue
+    srcPts_SG = np.float32([keypoints_SG_0[m] for m in matchesListSG_0])
+    dstPts_SG = np.float32([keypoints_SG_1[m] for m in matchesListSG_1])
     
-    # Plot the first 10 matches
-    imgMatched = cv2.drawMatches(img1, keypoints_sift_1, img2, keypoints_sift_2, dMatchesList[:100],
-                                 None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS and cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-    plt.imshow(imgMatched, cmap='gray', vmin=0, vmax=255)
-    plt.draw()
-    plt.waitforbuttonpress()
-    plt.close()
+    # Matched points in homogeneous coordinates
+    x1_SG = np.vstack((srcPts_SG.T, np.ones((1, srcPts_SG.shape[0]))))
+    x2_SG = np.vstack((dstPts_SG.T, np.ones((1, dstPts_SG.shape[0]))))
+
