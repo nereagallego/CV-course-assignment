@@ -76,6 +76,7 @@ if __name__ == '__main__':
     np.savetxt('calibration_matrix.txt', mtx)
     print('The radial distortion parameters are')
     print(dist)
+    np.savetxt('distortion_parameters.txt', dist)
 
     # undistorting the images
     print('Undistoring the images')
