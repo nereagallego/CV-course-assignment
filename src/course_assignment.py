@@ -406,18 +406,20 @@ if __name__ == '__main__':
     Op = [elevation, azimuth] + crossMatrixInv(sc.linalg.logm(R_c2_c1)) + X_3d[:,0:3].flatten().tolist()
 
     # Bundle adjustment using least squares function
-    OpOptim = scOptim.least_squares(resBundleProjection, Op, args=(srcPts.T, dstPts.T, Kc_new, srcPts.shape[0]),method='trf', loss='huber', verbose=2)
+    OpOptim = scOptim.least_squares(resBundleProjection, Op, args=(srcPts.T, dstPts.T, Kc_new, srcPts.shape[0]),method='trf', loss='huber', verbose=2, ftol=1e-4, xtol=1e-4, gtol=1e-4, max_nfev=1000)
     np.savetxt('Optimization.txt', OpOptim.x)
 
-    R_c2_c1 = sc.linalg.expm(crossMatrix(OpOptim.x[2:5]))
-    t_c2_c1 = np.array([np.sin(OpOptim.x[0])*np.cos(OpOptim.x[1]), np.sin(OpOptim.x[0])*np.sin(OpOptim.x[1]), np.cos(OpOptim.x[0])]).reshape(-1,1)
+    OpOptim = OpOptim.x
+
+    R_c2_c1 = sc.linalg.expm(crossMatrix(OpOptim[2:5]))
+    t_c2_c1 = np.array([np.sin(OpOptim[0])*np.cos(OpOptim[1]), np.sin(OpOptim[0])*np.sin(OpOptim[1]), np.cos(OpOptim[0])]).reshape(-1,1)
     T_c2_c1_op = np.hstack((R_c2_c1, t_c2_c1))
     P2_op = Kc_new @ T_c2_c1_op
     T_c2_c1_op = np.vstack((T_c2_c1_op, np.array([0, 0, 0, 1])))
-    points_3D_Op = np.concatenate((OpOptim.x[5: 8], np.array([1.0])), axis=0)
+    points_3D_Op = np.concatenate((OpOptim[5: 8], np.array([1.0])), axis=0)
 
     for i in range(X_3d.shape[0]-1):
-        points_3D_Op = np.vstack((points_3D_Op, np.concatenate((OpOptim.x[8+3*i: 8+3*i+3], np.array([1.0])) ,axis=0)))
+        points_3D_Op = np.vstack((points_3D_Op, np.concatenate((OpOptim[8+3*i: 8+3*i+3], np.array([1.0])) ,axis=0)))
 
     points_Op = points_3D_Op.T
 
