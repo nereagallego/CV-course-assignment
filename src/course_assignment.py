@@ -9,6 +9,34 @@ import os
 import scipy as sc
 import scipy.optimize as scOptim
 
+def draw3DLine(ax, xIni, xEnd, strStyle, lColor, lWidth):
+    """
+    Draw a segment in a 3D plot
+    -input:
+        ax: axis handle
+        xIni: Initial 3D point.
+        xEnd: Final 3D point.
+        strStyle: Line style.
+        lColor: Line color.
+        lWidth: Line width.
+    """
+    ax.plot([np.squeeze(xIni[0]), np.squeeze(xEnd[0])], [np.squeeze(xIni[1]), np.squeeze(xEnd[1])], [np.squeeze(xIni[2]), np.squeeze(xEnd[2])],
+            strStyle, color=lColor, linewidth=lWidth)
+
+def drawRefSystem(ax, T_w_c, strStyle, nameStr):
+    """
+        Draw a reference system in a 3D plot: Red for X axis, Green for Y axis, and Blue for Z axis
+    -input:
+        ax: axis handle
+        T_w_c: (4x4 matrix) Reference system C seen from W.
+        strStyle: lines style.
+        nameStr: Name of the reference system.
+    """
+    draw3DLine(ax, T_w_c[0:3, 3:4], T_w_c[0:3, 3:4] + T_w_c[0:3, 0:1], strStyle, 'r', 1)
+    draw3DLine(ax, T_w_c[0:3, 3:4], T_w_c[0:3, 3:4] + T_w_c[0:3, 1:2], strStyle, 'g', 1)
+    draw3DLine(ax, T_w_c[0:3, 3:4], T_w_c[0:3, 3:4] + T_w_c[0:3, 2:3], strStyle, 'b', 1)
+    ax.text(np.squeeze( T_w_c[0, 3]+0.1), np.squeeze( T_w_c[1, 3]+0.1), np.squeeze( T_w_c[2, 3]+0.1), nameStr)
+
 def matchWith2NDRR(desc1, desc2, distRatio, minDist):
     """
     Nearest Neighbours Matching algorithm checking the Distance Ratio.
@@ -304,6 +332,178 @@ def intersection(k1, k1_2, k2, k3):
         i += 1
     return np.array(k1_n), np.array(k2_n), np.array(k3_n)
 
+"the unknowns are the camera matrix parameters"
+"Each 2D-3D correspondence gives rise to two equations"
+def DLTcamera(matches, x_3d):
+
+    A = np.zeros((2*len(matches), 12))
+
+    for i in range(len(matches)):
+        A[2*i,:] = np.array([-x_3d[i,0], -x_3d[i,1], -x_3d[i,2], -x_3d[i,3], 0, 0, 0, 0, matches[i][0]*x_3d[i,0], matches[i][0]*x_3d[i,1], matches[i][0]*x_3d[i,2], matches[i][0] * x_3d[i,3]])
+        A[2*i+1,:] = np.array([0, 0, 0, 0, -x_3d[i,0], -x_3d[i,1], -x_3d[i,2], -x_3d[i,3], matches[i][1]*x_3d[i,0], matches[i][1]*x_3d[i,1], matches[i][1]*x_3d[i,2], matches[i][1] * x_3d[i,3]])
+
+    _, _, V = np.linalg.svd(A)
+    P = V[-1,:].reshape((3,4))
+    return P
+
+def decompose_P_matrix(P):
+    # Computing the optical centre pose in world frame solving svd(P)
+    _, _, V = np.linalg.svd(P)
+    C = V[-1, :]
+    C = C / C[3]
+    C = C[0:3]
+
+    # rq decomposition of the camera matrix
+    K, R = sc.linalg.rq(P[:, 0:3])
+
+    # Check that the diagonal elements of K are positive
+    D = np.diag(np.sign(np.diag(K)))
+    R = D @ R
+    K_raya = D @ K
+    K = K_raya / K_raya[2, 2]
+
+    # Compute the translation vector
+    t = np.linalg.inv(K) @ P[:, 3]
+    return R, t, K
+
+def resBundleProjection_n_cameras(Op, xData, nCameras, K_c, nPoints):
+    """
+    -input:
+    Op: Optimization parameters: this must include a
+    paramtrization for T_21 (reference 1 seen from reference 2)
+    in a proper way and for X1 (3D points in ref 1)
+    x1Data: (3xnPoints) 2D points on image 1 (homogeneous
+    coordinates)
+    x2Data: (3xnPoints) 2D points on image 2 (homogeneous
+    coordinates)
+    K_c: (3x3) Intrinsic calibration matrix
+    nPoints: Number of points
+    -output:
+    res: residuals from the error between the 2D matched points
+    and the projected points from the 3D points
+    (2 equations/residuals per 2D point)
+
+    ASSUMING AT LEAST 3 CAMERAS !!!
+    """
+
+    '''
+    Op[0:1] -> theta, phi
+    Op[2:5] -> Rx,Ry,Rz
+    Op[6:8] -> tx, ty, tz (camera 3 in advance)
+    Op[9:11] -> Rx,Ry,Rz
+    ...
+    Op[] -> 3DXx,3DXy,3DXz
+    '''
+    # Bundle adjustment using least squares function
+    idem = np.append(np.eye(3), np.zeros((3, 1)), axis=1)
+
+    theta_ext_1 = K_c @ idem
+
+
+    theta_ext = []
+    theta_ext.append(theta_ext_1)
+
+    for i in range(nCameras - 1):
+        # R = sc.linalg.expm(crossMatrix(Op[2+5*i:5+5*i]))
+        if i == 0:
+            # No se que hay que poner aqui
+            t = np.array([np.sin(Op[0])*np.cos(Op[1]), np.sin(Op[0])*np.sin(Op[1]), np.cos(Op[0])]).reshape(-1,1)
+            R = sc.linalg.expm(crossMatrix(Op[2+5*i:5+5*i]))
+        else:
+            t = np.array([Op[6*(i-1)+5],Op[6*(i-1)+6],Op[6*(i-1)+7]]).reshape(-1,1)
+            R = sc.linalg.expm(crossMatrix(Op[6*(i-1)+8:6*(i-1)+11]))
+            if i == 2:
+                K_c = np.array(Op[6*(i-1)+11:6*(i-1)+20]).reshape(3,3)
+        T = np.hstack((R, t))
+        theta_ext.append(K_c @ T)
+
+
+    # Compute the residuals
+   
+    Xpoints = xData
+    # Xpoints = xData.reshape(nCameras, nPoints, 2)
+    idx_3D = 5 + (nCameras-2)*6 + 9
+    X_3D = np.hstack((Op[idx_3D:].reshape(-1, 3), np.ones((nPoints, 1))))
+    # print(X_3D)
+    res = []
+    for i in range(nCameras):
+        projection = theta_ext[i] @ X_3D.T
+        projection = projection[:2, :] / projection[2, :]
+        res.append((Xpoints[i] - projection.T).flatten())
+
+    # print(res)
+    return np.array(res).flatten()
+
+def ensamble_T(R_w_c, t_w_c) -> np.array:
+    """
+    Ensamble the a SE(3) matrix with the rotation matrix and translation vector.
+    """
+    T_w_c = np.zeros((4, 4))
+    T_w_c[0:3, 0:3] = R_w_c
+    T_w_c[0:3, 3] = t_w_c
+    T_w_c[3, 3] = 1
+    return T_w_c
+
+def calculate_RANSAC_own_F(source,dst,third, threshold, nx1, ny1, nx2, ny2):
+    num_samples = 8
+    spFrac = 0.6  # spurious fraction
+    P = 0.999  # probability of selecting at least one sample without spurious
+
+    # number m of random samples
+    nAttempts = np.round(np.log(1 - P) / np.log(1 - np.power((1 - spFrac),num_samples)))
+    num_attempts = nAttempts.astype(int)
+    num_attempts = 10000
+
+    matches = np.vstack((source,dst, third))
+    best_model_votes = 0
+    best_model_matches = None
+    
+
+    for kAttempt in range(num_attempts):
+        votes = 0
+
+        rng = np.random.default_rng()
+        indx_subset = rng.choice(matches.shape[1] - 1, size=num_samples, replace=False)
+        matches_subset = []
+        rest_matches = []
+        good_matches = []
+
+        for i in range(matches.shape[1]):
+            if i in indx_subset:
+                matches_subset.append(matches[:, i])
+            else:
+                rest_matches.append(matches[:, i])
+
+        matches_subset = np.array(matches_subset).T
+        rest_matches = np.array(rest_matches).T
+
+        F = compute_fundamental_matrix(matches_subset[0:3,:],matches_subset[3:6,:], nx1, ny1, nx2, ny2)
+        # F = compute_fundamental_matrix(matches_subset[0:3,:],matches_subset[3:6,:])
+        if F is not None:
+            for i in range(rest_matches.shape[1]):
+
+                x1 = rest_matches[0:3, i]
+                x2 = rest_matches[3:6, i]
+
+                l_2 = F @ x1
+                    
+                dist_x2_l2 = np.abs(np.dot(x2.T,np.dot(F , x1))/ np.sqrt((l_2[0]**2 + l_2[1]**2)))
+
+                if dist_x2_l2 < threshold:
+                    good_matches.append(rest_matches[:, i])
+                    votes = votes + 1
+
+
+            if votes > best_model_votes:
+                best_model_votes = votes
+                print(votes)
+                F_most_voted = F
+                best_model_matches = matches_subset
+                best_model_matches = np.hstack((best_model_matches, np.array(good_matches).T))
+
+    return F_most_voted, best_model_matches
+
+
 if __name__ == '__main__':
     Kc_new = np.loadtxt('calibration_matrix.txt')
 
@@ -351,22 +551,15 @@ if __name__ == '__main__':
     dstPts_SG_old = keypoints_SG_1_old
 
     
-    distRatio = 0.8
-    minDist = 500
-    matchesList = matchWith2NDRR_2(srcPts_SG, dstPts_SG, distRatio, minDist)
-    dMatchesList = indexMatrixToMatchesList(matchesList)
-    dMatchesList = sorted(dMatchesList, key=lambda x: x.distance)
+    F, good_matches = calculate_RANSAC_own_F(srcPts_SG.T, dstPts_SG.T, dstPts_SG_old.T, 2, img1.shape[1], img1.shape[0], img2.shape[1], img2.shape[0])
+    print(F)
+    print(good_matches.shape)
 
     # Matched points in numpy from list of DMatches
     srcPts = np.float32([keypoints_SG_0[m.queryIdx] for m in dMatchesList]).reshape(len(dMatchesList), 2)
     dstPts = np.float32([keypoints_SG_1[m.trainIdx] for m in dMatchesList]).reshape(len(dMatchesList), 2)
     dstPts_old = np.float32([keypoints_SG_1_old[m.trainIdx] for m in dMatchesList]).reshape(len(dMatchesList), 2)
     print(srcPts.shape, dstPts.shape)
-
-   
-    # Matched points in homogeneous coordinates
-    x1_SG = np.vstack((srcPts_SG.T, np.ones((1, srcPts_SG.shape[0]))))
-    x2_SG = np.vstack((dstPts_SG.T, np.ones((1, dstPts_SG.shape[0]))))
 
     # Fundamental matrix from SuperGlue
     print(srcPts.shape, dstPts.shape, dstPts_old.shape)
@@ -385,56 +578,129 @@ if __name__ == '__main__':
 
     elevation = np.arccos(t_c2_c1[2] / np.linalg.norm(t_c2_c1))
     azimuth = np.arctan2(t_c2_c1[1], t_c2_c1[0])
-    
-    # SO_c2Rc1_est = np.array(crossMatrixInv(sc.linalg.logm(Rt[0:3, 0:3])))
-    # x = SO_c2Rc1_est[0]
-    # y = SO_c2Rc1_est[1]
-    # z = SO_c2Rc1_est[2]
-
-    # xy = x**2 + y**2
-    # if z == 0:
-    #     theta = np.pi / 2.0
-    # else:
-    #     theta = np.arctan2(np.sqrt(xy), z)
-    # if x == 0:
-    #     phi = (np.pi / 2.0) * np.sign(y)
-    # else:
-    #     phi = np.arctan2(y, x)
-    # elevation = theta
-    # azimuth = phi
 
     Op = [elevation, azimuth] + crossMatrixInv(sc.linalg.logm(R_c2_c1)) + X_3d[:,0:3].flatten().tolist()
 
     # Bundle adjustment using least squares function
-    OpOptim = scOptim.least_squares(resBundleProjection, Op, args=(srcPts.T, dstPts.T, Kc_new, srcPts.shape[0]),method='trf', loss='huber', verbose=2, ftol=1e-4, xtol=1e-4, gtol=1e-4, max_nfev=1000)
-    np.savetxt('Optimization.txt', OpOptim.x)
+    # OpOptim = scOptim.least_squares(resBundleProjection, Op, args=(srcPts.T, dstPts.T, Kc_new, srcPts.shape[0]),method='trf', loss='huber', verbose=2, ftol=1e-4, xtol=1e-4, gtol=1e-4, max_nfev=1000)
+    # np.savetxt('Optimization.txt', OpOptim.x)
 
-    OpOptim = OpOptim.x
+    # OpOptim = OpOptim.x
+
+    OpOptim = np.loadtxt('Optimization.txt')
 
     R_c2_c1 = sc.linalg.expm(crossMatrix(OpOptim[2:5]))
     t_c2_c1 = np.array([np.sin(OpOptim[0])*np.cos(OpOptim[1]), np.sin(OpOptim[0])*np.sin(OpOptim[1]), np.cos(OpOptim[0])]).reshape(-1,1)
-    T_c2_c1_op = np.hstack((R_c2_c1, t_c2_c1))
-    P2_op = Kc_new @ T_c2_c1_op
-    T_c2_c1_op = np.vstack((T_c2_c1_op, np.array([0, 0, 0, 1])))
+    
+    T_c2_c1_op = ensamble_T(R_c2_c1, t_c2_c1.T)
+
     points_3D_Op = np.concatenate((OpOptim[5: 8], np.array([1.0])), axis=0)
 
     for i in range(X_3d.shape[0]-1):
         points_3D_Op = np.vstack((points_3D_Op, np.concatenate((OpOptim[8+3*i: 8+3*i+3], np.array([1.0])) ,axis=0)))
 
-    points_Op = points_3D_Op.T
+    
 
     idem = np.append(np.eye(3), np.zeros((3, 1)), axis=1)
-    P1_est = Kc_new @ idem
-    x1_p = P1_est @ points_3D_Op.T
-    x1_p = x1_p / x1_p[2, :]
-    x2_p = P2_op @ points_3D_Op.T
-    x2_p = x2_p / x2_p[2, :]
+    # P1_est = Kc_new @ idem
+    # x1_p = P1_est @ points_3D_Op.T
+    # x1_p = x1_p / x1_p[2, :]
+    # x2_p = P2_op @ points_3D_Op.T
+    # x2_p = x2_p / x2_p[2, :]
 
-    points_3D_Scene = np.float32(points_3D_Op[:, 0:3])
-    points_C3 = np.ascontiguousarray(dstPts_old[0:2, :].T)
-    Coeff=np.loadtxt('distortion_parameters.txt')
-    retval, rvec, tvec = cv2.solvePnP(objectPoints=points_3D_Scene, imagePoints=dstPts_old, cameraMatrix=Kc_new,
-                                      distCoeffs=np.array(Coeff), flags=cv2.SOLVEPNP_EPNP)
+    points_Op = idem @ (points_3D_Op).T
+
+    # fig3D = plt.figure(2)
+    # ax = plt.axes(projection='3d', adjustable='box')
+    # ax.set_xlabel('X')
+    # ax.set_ylabel('Y')
+    # ax.set_zlabel('Z')
+
+    # drawRefSystem(ax, np.eye(4,4), '-', 'C1')
+    # drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c2_c1_op), '-', 'C2_BA_scaled')
+
+    # ax.scatter(points_Op[0, :], points_Op[1, :], points_Op[2, :], marker='.')  # 3D points
+
+    # plt.title('3D points Bundle adjustment')
+    # plt.show()
+
+    # fig3D = plt.figure(2)
+    # ax = plt.axes(projection='3d', adjustable='box')
+    # ax.set_xlabel('X')
+    # ax.set_ylabel('Y')
+    # ax.set_zlabel('Z')
+    # ax.scatter(points_Op[0, :], points_Op[1, :], points_Op[2, :], marker='.')  # 3D points
+
+    # plt.title('3D points Bundle adjustment')
+    # plt.show()
+
+    points_C3 = dstPts_old
+
+    print(points_3D_Op.shape, points_C3.shape)
+
+    P_old = DLTcamera(points_C3, points_3D_Op)
+    print(P_old)
+    R_c3_c1, t_c3_c1, K_c3_c1 = decompose_P_matrix(P_old)
+    print(R_c3_c1)
+    print(t_c3_c1)
+    print(K_c3_c1)
+    T_c3_c1 = ensamble_T(R_c3_c1, t_c3_c1)
+    print(T_c3_c1)
+   
+    # DLT camera matrix P
+
+
+    fig3D = plt.figure(8)
+
+    ax = plt.axes(projection='3d', adjustable='box')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+
+    drawRefSystem(ax, np.eye(4, 4), '-', 'C1')
+    drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c3_c1), '-', 'C3_PnP')
+    drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c2_c1_op), '-', 'C2_BA_scaled')
+    plt.title('3D camera poses PnP')
+    plt.draw()
+    plt.show()
+
+    elevation2 = np.arccos(t_c2_c1[2])
+    azimuth2 = np.arcsin(t_c2_c1[0] / np.sin(elevation2))
+
+    Kc_old = K_c3_c1.flatten().tolist()
+    print(Kc_old)
+
+    Op2 = [elevation2, azimuth2] + crossMatrixInv(sc.linalg.logm(R_c2_c1)) + [t_c3_c1[0], t_c3_c1[1], t_c3_c1[2]] + crossMatrixInv(sc.linalg.logm(R_c3_c1)) + K_c3_c1.flatten().tolist() + X_3d[:,0:3].flatten().tolist()
+
+    X2 = np.stack((srcPts, dstPts, points_C3))
+    OpOptim2 = scOptim.least_squares(resBundleProjection_n_cameras, Op2, args=(X2, 3, Kc_new, srcPts.shape[0]),method='trf', loss='huber', verbose=2, ftol=1e-5, xtol=1e-5, gtol=1e-5, max_nfev=1000)
+    np.savetxt('Optimization2.txt', OpOptim2.x)
+
+    OpOptim2 = OpOptim2.x
+
+    R_c2_c1 = sc.linalg.expm(crossMatrix(OpOptim2[2:5]))
+    t_c2_c1 = np.array([np.sin(OpOptim2[0])*np.cos(OpOptim2[1]), np.sin(OpOptim2[0])*np.sin(OpOptim2[1]), np.cos(OpOptim2[0])]).reshape(-1,1)
+    T_c2_c1_op = ensamble_T(R_c2_c1, t_c2_c1.T)
+
+    R_c3_c1 = sc.linalg.expm(crossMatrix(OpOptim2[8:11]))
+    t_c3_c1 = np.array([OpOptim2[5],OpOptim2[6],OpOptim2[7]]).reshape(-1,1)
+    T_c3_c1_op = ensamble_T(R_c3_c1, t_c3_c1.T)
+    Kc_old = np.array(OpOptim2[11:20]).reshape(3,3)
+
+    points_3D_Op = np.concatenate((OpOptim2.x[20: 20+3], np.array([1.0])), axis=0)
+
+    for i in range(X_3d.shape[0]-1):
+        points_3D_Op = np.vstack((points_3D_Op, np.concatenate((OpOptim2.x[20+3+3*i: 20+3+3*i+3], np.array([1.0])) ,axis=0)))
+
+
+    #### Draw 3D ################
+    fig3D = plt.figure(2)
+    ax = plt.axes(projection='3d', adjustable='box')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+
+    drawRefSystem(ax, np.eye(4, 4), '-', 'C1')
+    drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c2_c1_op), '-', 'C2_BA_scaled')
+    drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c3_c1_op), '-', 'C3_BA_scaled')
     
-    print('rvec: ', rvec)
-
