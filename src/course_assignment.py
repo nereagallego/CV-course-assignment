@@ -204,13 +204,14 @@ def points_in_front_of_both_cameras(x1, x2, T, K):
 
     points_front = []
     for point in points3d:
-        points_front.append(point)
+        
         if point[2] <= 0:
             continue
 
         # z > 0 in C1 frame
         pointFrame = T @ point.reshape(-1,1)
         if pointFrame[2] > 0:
+            points_front.append(point)
             in_front += 1
         
     return np.array(in_front), np.array(points_front)
@@ -252,6 +253,70 @@ def decompose_essential_matrix(x1, x2, E, K):
     # print(np.argmax(points_front))
     T = solutions[np.argmax(points_front)]
     return T, np.array(points[np.argmax(points_front)])
+
+def sfm(K_c, F, x1Data, x2Data, idx):
+    E_21 = K_c.T @ F @ K_c           # tema 6, diapo 10, 11
+
+    u, s, vh = np.linalg.svd(E_21)
+    # The forced E_21 of rank 2 is not necessary
+    
+    W = np.reshape((0, -1, 0, 1, 0, 0, 0, 0, 1), (3, 3))
+    t = u[:,2]
+
+    R_p90 = u @ W @ vh
+    R_m90 = u @ W.T @ vh
+
+    P1 = K_c @ ensamble_T(np.diag((1, 1, 1)), (0, 0, 0))[0:3]
+
+    R_opt = [R_p90, R_p90, R_m90, R_m90]
+    t_opt = [t, -t, t, -t]
+    for i in range(len(R_opt)):
+        if np.linalg.det(R_opt[i]) < 0:
+            R_opt[i] = -R_opt[i]
+            t_opt[i] = -t_opt[i]
+
+    P2_opt = []
+    for i in range(len(R_opt)):
+        P2_opt.append(K_c @ ensamble_T(R_opt[i], t_opt[i])[0:3])
+
+    print(len(P2_opt), i)
+
+    results_opt = np.zeros((4,1))
+    for i in range(x1Data.shape[1]):
+        for j, P2_j in enumerate(P2_opt):
+            A = np.vstack((
+                P1[2] * x1Data[0,i] - P1[0],
+                P1[2] * x1Data[1,i] - P1[1],
+                P2_j[2] * x2Data[0,i] - P2_j[0],
+                P2_j[2] * x2Data[1,i] - P2_j[1]
+            ))
+            u, s, vh = np.linalg.svd(A)
+            point_3D = vh[-1, :]
+            point_3D /= point_3D[3]
+           
+            # https://cmsc426.github.io/sfm/
+            if point_3D[2] > 0 and (R_opt[j][2,:] @ (point_3D[0:3] - t_opt[j])) > 0:
+                # The point is in front of both cameras
+                results_opt[j] += 1
+
+    opt = np.argmax(results_opt)
+    opt = i
+    P2 = P2_opt[idx]
+    print(results_opt.max())
+    
+    ponits_3d = []
+    for i in range(x1Data.shape[1]):
+        A = np.vstack((
+                P1[2] * x1Data[0,i] - P1[0],
+                P1[2] * x1Data[1,i] - P1[1],
+                P2[2] * x2Data[0,i] - P2[0],
+                P2[2] * x2Data[1,i] - P2[1]
+            ))
+        u, s, vh = np.linalg.svd(A)
+        point_3D = vh[-1, :]
+        point_3D /= point_3D[3]
+        ponits_3d.append(point_3D)
+    return P2, np.array(ponits_3d)
 
 def compute_essential_matrix(F, K):
     E = K.T @ F @ K
@@ -551,28 +616,45 @@ if __name__ == '__main__':
     dstPts_SG_old = keypoints_SG_1_old
 
     
-    F, good_matches = calculate_RANSAC_own_F(srcPts_SG.T, dstPts_SG.T, dstPts_SG_old.T, 2, img1.shape[1], img1.shape[0], img2.shape[1], img2.shape[0])
+    # F, good_matches = calculate_RANSAC_own_F(srcPts_SG.T, dstPts_SG.T, dstPts_SG_old.T, 4, img1.shape[1], img1.shape[0], img2.shape[1], img2.shape[0])
+    # np.savetxt('F.txt', F)
+    # np.savetxt('good_matches.txt', good_matches)
+    F = np.loadtxt('F.txt')
+    good_matches = np.loadtxt('good_matches.txt')
+
+
     print(F)
     print(good_matches.shape)
 
-    # Matched points in numpy from list of DMatches
-    srcPts = np.float32([keypoints_SG_0[m.queryIdx] for m in dMatchesList]).reshape(len(dMatchesList), 2)
-    dstPts = np.float32([keypoints_SG_1[m.trainIdx] for m in dMatchesList]).reshape(len(dMatchesList), 2)
-    dstPts_old = np.float32([keypoints_SG_1_old[m.trainIdx] for m in dMatchesList]).reshape(len(dMatchesList), 2)
-    print(srcPts.shape, dstPts.shape)
+    srcPts = good_matches[0:2,:].T
+    dstPts = good_matches[2:4,:].T
+    dstPts_old = good_matches[4:6,:].T
 
-    # Fundamental matrix from SuperGlue
     print(srcPts.shape, dstPts.shape, dstPts_old.shape)
-    F_SG = compute_fundamental_matrix(srcPts.T, dstPts.T, img1.shape[1], img1.shape[0], img2.shape[1], img2.shape[0])
 
-    print('Fundamental matrix from SuperGlue: \n', F_SG)
+    # E_SG = compute_essential_matrix(F, Kc_new)
+    # print('Essential matrix from SuperGlue: \n', E_SG)
+    # Rt, X_3d = decompose_essential_matrix(srcPts.T, dstPts.T, E_SG, Kc_new)
+    Rt, X_3d = sfm(Kc_new, F, srcPts.T, dstPts.T, 0)
+    fig3D = plt.figure(2)
+    ax = plt.axes(projection='3d', adjustable='box')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
 
-    E_SG = compute_essential_matrix(F_SG, Kc_new)
-    print('Essential matrix from SuperGlue: \n', E_SG)
-    Rt, X_3d = decompose_essential_matrix(srcPts.T, dstPts.T, E_SG, Kc_new)
+    drawRefSystem(ax, np.eye(4,4), '-', 'C1')
+    drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(Rt), '-', 'C2_BA_scaled')
+
+    ax.scatter(X_3d[0, :], X_3d[1, :], X_3d[2, :], marker='.') 
+    Rt, X_3d = sfm(Kc_new, F, srcPts.T, dstPts.T, 1)
+    ax.scatter(X_3d[0, :], X_3d[1, :], X_3d[2, :], marker='.')
+    Rt, X_3d = sfm(Kc_new, F, srcPts.T, dstPts.T, 2)
+    ax.scatter(X_3d[0, :], X_3d[1, :], X_3d[2, :], marker='.') 
+    Rt, X_3d = sfm(Kc_new, F, srcPts.T, dstPts.T, 3)
+    ax.scatter(X_3d[0, :], X_3d[1, :], X_3d[2, :], marker='.') 
+    plt.show()
     print(X_3d.shape)
     print('Rt from SuperGlue: \n', Rt)
-    # # add last row to make it 4x4
     R_c2_c1 = Rt[:, 0:3]
     t_c2_c1 = Rt[:, 3].reshape(-1,1)
 
@@ -582,12 +664,12 @@ if __name__ == '__main__':
     Op = [elevation, azimuth] + crossMatrixInv(sc.linalg.logm(R_c2_c1)) + X_3d[:,0:3].flatten().tolist()
 
     # Bundle adjustment using least squares function
-    # OpOptim = scOptim.least_squares(resBundleProjection, Op, args=(srcPts.T, dstPts.T, Kc_new, srcPts.shape[0]),method='trf', loss='huber', verbose=2, ftol=1e-4, xtol=1e-4, gtol=1e-4, max_nfev=1000)
-    # np.savetxt('Optimization.txt', OpOptim.x)
+    OpOptim = scOptim.least_squares(resBundleProjection, Op, args=(srcPts.T, dstPts.T, Kc_new, srcPts.shape[0]),method='trf', loss='huber', verbose=2, ftol=1e-4, xtol=1e-4, gtol=1e-4, max_nfev=1000)
+    np.savetxt('Optimization.txt', OpOptim.x)
 
-    # OpOptim = OpOptim.x
+    OpOptim = OpOptim.x
 
-    OpOptim = np.loadtxt('Optimization.txt')
+    # OpOptim = np.loadtxt('Optimization.txt')
 
     R_c2_c1 = sc.linalg.expm(crossMatrix(OpOptim[2:5]))
     t_c2_c1 = np.array([np.sin(OpOptim[0])*np.cos(OpOptim[1]), np.sin(OpOptim[0])*np.sin(OpOptim[1]), np.cos(OpOptim[0])]).reshape(-1,1)
@@ -608,18 +690,18 @@ if __name__ == '__main__':
     # x2_p = P2_op @ points_3D_Op.T
     # x2_p = x2_p / x2_p[2, :]
 
-    points_Op = idem @ (points_3D_Op).T
+    points_Op = np.eye(4,4) @ (points_3D_Op).T
 
-    # fig3D = plt.figure(2)
-    # ax = plt.axes(projection='3d', adjustable='box')
-    # ax.set_xlabel('X')
-    # ax.set_ylabel('Y')
-    # ax.set_zlabel('Z')
+    fig3D = plt.figure(2)
+    ax = plt.axes(projection='3d', adjustable='box')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
 
-    # drawRefSystem(ax, np.eye(4,4), '-', 'C1')
-    # drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c2_c1_op), '-', 'C2_BA_scaled')
+    drawRefSystem(ax, np.eye(4,4), '-', 'C1')
+    drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c2_c1_op), '-', 'C2_BA_scaled')
 
-    # ax.scatter(points_Op[0, :], points_Op[1, :], points_Op[2, :], marker='.')  # 3D points
+    ax.scatter(points_Op[0, :], points_Op[1, :], points_Op[2, :], marker='.')  # 3D points
 
     # plt.title('3D points Bundle adjustment')
     # plt.show()
@@ -687,10 +769,10 @@ if __name__ == '__main__':
     T_c3_c1_op = ensamble_T(R_c3_c1, t_c3_c1.T)
     Kc_old = np.array(OpOptim2[11:20]).reshape(3,3)
 
-    points_3D_Op = np.concatenate((OpOptim2.x[20: 20+3], np.array([1.0])), axis=0)
+    points_3D_Op = np.concatenate((OpOptim2[20: 20+3], np.array([1.0])), axis=0)
 
     for i in range(X_3d.shape[0]-1):
-        points_3D_Op = np.vstack((points_3D_Op, np.concatenate((OpOptim2.x[20+3+3*i: 20+3+3*i+3], np.array([1.0])) ,axis=0)))
+        points_3D_Op = np.vstack((points_3D_Op, np.concatenate((OpOptim2[20+3+3*i: 20+3+3*i+3], np.array([1.0])) ,axis=0)))
 
 
     #### Draw 3D ################
