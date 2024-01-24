@@ -163,9 +163,13 @@ def compute_essential_matrix(F, K):
 def triangulation(P1, P2, points1, points2):    
     points3D = np.zeros((4, points1.shape[1]))
     for i in range(points1.shape[1]):
-        p1 = points1[:, i].reshape(2, 1)
-        p2 = points2[:, i].reshape(2, 1)
-        A = [p1[0] * P1[2, :] - P1[0, :], p1[1] * P1[2, :] - P1[1, :], p2[0] * P2[2, :] - P2[0, :], p2[1] * P2[2, :] - P2[1, :]]
+        p1 = points1[:, i]
+        p2 = points2[:, i]
+        # A = [p1[0] * P1[2, :] - P1[0, :], p1[1] * P1[2, :] - P1[1, :], p2[0] * P2[2, :] - P2[0, :], p2[1] * P2[2, :] - P2[1, :]]
+        A = np.vstack((p1[0] * P1[2, :] - P1[0, :], 
+                       p1[1] * P1[2, :] - P1[1, :], 
+                       p2[0] * P2[2, :] - P2[0, :], 
+                       p2[1] * P2[2, :] - P2[1, :]))
         _, _, V = np.linalg.svd(A)
         X = V[-1, :]
         points3D[:, i] = X / X[3]
@@ -173,10 +177,10 @@ def triangulation(P1, P2, points1, points2):
     return points3D
 
 def points_in_front_of_both_cameras(x1, x2, T, K):
-    I = np.array([[1, 0 , 0, 0], [0, 1, 0, 0], [0, 0, 1 ,0]])
+    I = ensamble_T(np.diag((1, 1, 1)), np.zeros((3)))[0:3]
 
     P1 = K @ I
-    P2 = K @ T[0:3, :]
+    P2 = K @ T[0:3]
 
     points3d = triangulation(P1, P2, x1, x2)
     points3d = points3d.T
@@ -185,12 +189,15 @@ def points_in_front_of_both_cameras(x1, x2, T, K):
 
     points_front = []
     for point in points3d:
-        if point[2] < 0:
-            continue
+        # if point[2] < 0:
+            # continue
 
         # z > 0 in C1 frame
-        pointFrame = T @ point.reshape(-1,1)
-        if pointFrame[2] > 0:
+        # pointFrame = T @ point.reshape(-1,1)
+        # if pointFrame[2] > 0:
+        R = T[0:3, 0:3]
+        t = T[0:3, 3]
+        if point[2] > 0 and np.dot(R[2], point[0:3] - t) > 0:
             in_front += 1
             points_front.append(point)
     
@@ -207,7 +214,7 @@ def ensamble_T(R_w_c, t_w_c) -> np.array:
     return T_w_c
 
 # Decompose the Essential matrix
-def decompose_essential_matrix(x1, x2, E, K):
+def decompose_essential_matrix(x1, x2, E, K, idx=None):
     # Compute the SVD of the essential matrix
     U, _, V = np.linalg.svd(E)
     t = U[:,2]
@@ -220,15 +227,17 @@ def decompose_essential_matrix(x1, x2, E, K):
         [0, 0, 1]
     ])
 
-    R_90 = U @ W @ V if np.linalg.det(U @ W @ V) > 0 else -U @ W.T @ V
-    R_n90 = U @ W.T @ V if np.linalg.det(U @ W.T @ V) > 0 else -U @ W.T @ V
+    R_90 = U @ W @ V
+    R_n90 = U @ W.T @ V 
 
     # Compute the four possible solutions
     solutions = []
-    solutions.append(ensamble_T(R_90,t)) #R + 90 + t
-    solutions.append(ensamble_T(R_90,-t)) # R + 90 - t
-    solutions.append(ensamble_T(R_n90,t))  # R - 90 + t
-    solutions.append(ensamble_T(R_90,-t)) # R - 90 - t
+    for R in [R_90, R_n90]:
+        for i in [t, -t]:
+            if np.linalg.det(R) < 0:
+                R *= -1
+                i *= -1
+                solutions.append(ensamble_T(R, i))
 
     points_front = []
     points = []
@@ -237,14 +246,17 @@ def decompose_essential_matrix(x1, x2, E, K):
         points_front.append(v1)
         points.append(v2)
     T = solutions[np.argmax(points_front)]
-    return T, np.array(points[np.argmax(points_front)])
+    if idx is None:
+        return T, np.array(points[np.argmax(points_front)])
+    else:
+        return solutions[idx], np.array(points[idx])
 
 if __name__ == '__main__':
     Kc_new = np.loadtxt('calibration_matrix.txt')
 
 
     path_image_new_1 = 'imgs1/img_new1.jpg'
-    path_image_new_2 = 'imgs1/img_new2.jpg'
+    path_image_new_2 = 'imgs1/img_new3.jpg'
     path_image_old = 'imgs1/img_old.jpg'
 
     img1 = cv2.imread(path_image_new_1)
@@ -253,7 +265,7 @@ if __name__ == '__main__':
 
     print('Imgs loaded')
 
-    path = './output/img_new1_img_new2_matches.npz'
+    path = './output/img_new1_img_new3_matches.npz'
     npz = np.load(path)
     keypoints_SG_0_new = npz['keypoints0']
     keypoints_SG_1_new = npz['keypoints1']
@@ -288,6 +300,7 @@ if __name__ == '__main__':
     E = compute_essential_matrix(F, Kc_new)
 
     Rt, X_3d = decompose_essential_matrix(kp_new1[:,0:2].T, kp_new2[:,0:2].T, E, Kc_new)
+    print(X_3d.shape)
 
 
     # Plot the 3D points
