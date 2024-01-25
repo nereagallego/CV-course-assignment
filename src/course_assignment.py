@@ -110,6 +110,7 @@ def calculate_RANSAC_own_F(source,dst,third, threshold, nx1, ny1, nx2, ny2):
     matches = np.vstack((source,dst, third))
     best_model_votes = 0
     best_model_matches = None
+    F_most_voted = None
 
     for kAttempt in range(num_attempts):
         votes = 0
@@ -325,6 +326,41 @@ def plotResidual2(x,xProjected,strStyle, ax):
         ax.plot(x[k, 0], x[k, 1], 'bo')
         ax.plot(xProjected[k, 0], xProjected[k, 1], 'rx')
 
+"the unknowns are the camera matrix parameters"
+"Each 2D-3D correspondence gives rise to two equations"
+def DLTcamera(matches, x_3d):
+
+    A = np.zeros((2*len(matches), 12))
+
+    for i in range(len(matches)):
+        A[2*i,:] = np.array([-x_3d[i,0], -x_3d[i,1], -x_3d[i,2], -x_3d[i,3], 0, 0, 0, 0, matches[i][0]*x_3d[i,0], matches[i][0]*x_3d[i,1], matches[i][0]*x_3d[i,2], matches[i][0] * x_3d[i,3]])
+        A[2*i+1,:] = np.array([0, 0, 0, 0, -x_3d[i,0], -x_3d[i,1], -x_3d[i,2], -x_3d[i,3], matches[i][1]*x_3d[i,0], matches[i][1]*x_3d[i,1], matches[i][1]*x_3d[i,2], matches[i][1] * x_3d[i,3]])
+
+    _, _, V = np.linalg.svd(A)
+    P = V[-1,:].reshape((3,4))
+    return P
+
+def decompose_P_matrix(P):
+    # Computing the optical center pose in world frame solving svd(P)
+    _, _, V = np.linalg.svd(P)
+    C = V[-1, :]
+    C = C / C[3]
+    C = C[0:3]
+
+    # rq decomposition of the camera matrix
+    M_gorro = np.sign(np.linalg.det(P[:,0:3])) * P[:,0:3]
+    K_gorro, R_gorro = sc.linalg.rq(M_gorro)
+
+    # Check that the diagonal elements of K are positive
+    D = np.diag(np.sign(np.diag(K_gorro)))
+    R = D @ R_gorro
+    K_raya = D @ K_gorro
+    K = K_raya / K_raya[2, 2]
+
+    # Compute the translation vector
+    t = np.linalg.inv(K) @ P[:, 3]
+    return R, t, K
+
 if __name__ == '__main__':
     Kc_new = np.loadtxt('calibration_matrix.txt')
 
@@ -398,19 +434,6 @@ if __name__ == '__main__':
     ax.plot(xFakeBoundingBox, yFakeBoundingBox, zFakeBoundingBox, 'w.')
     plt.show()
 
-    R = T_c2_c1[0:3, 0:3]
-    t = T_c2_c1[0:3, 3].reshape(-1,1)
-
-    elevation = np.arccos(t[2])
-    azimuth = np.arctan2(t[1], t[0])
-
-    Op = [elevation, azimuth] + crossMatrixInv(sc.linalg.logm(R)) + X_3d[:,0:3].flatten().tolist()
-    Op = np.array(Op, dtype="object")
-
-    res = resBundleProjection(Op, kp_new1[:,0:2].T, kp_new2[:,0:2].T, Kc_new, kp_new1.shape[0])
-
-    print(res.shape)
-
     zeros = np.zeros(3).reshape(3,1)
     idem = np.hstack((np.identity(3),zeros))
     aux_matrix = np.dot(Kc_new,idem)
@@ -430,4 +453,74 @@ if __name__ == '__main__':
     ax[1].imshow(img2)
     ax[1].set_title('Residuals after Bundle adjustment Image2')
     plotResidual2(kp_new2, x2_p.T, 'k-', ax[1])
+    plt.show()
+
+    R = T_c2_c1[0:3, 0:3]
+    t = T_c2_c1[0:3, 3].reshape(-1,1)
+
+    elevation = np.arccos(t[2])
+    azimuth = np.arctan2(t[1], t[0])
+
+    Op = [elevation, azimuth] + crossMatrixInv(sc.linalg.logm(R)) + X_3d[:,0:3].flatten().tolist()
+
+    OpOptim = scOptim.least_squares(resBundleProjection, Op, args=(kp_new1[:,0:2].T, kp_new2[:,0:2].T, Kc_new, kp_new1.shape[0]), method='trf', loss='huber', verbose=2)
+
+    R_c2_c1 = sc.linalg.expm(crossMatrix(OpOptim.x[2:5]))
+    t_c2_c1 = np.array([np.sin(OpOptim.x[0])*np.cos(OpOptim.x[1]), np.sin(OpOptim.x[0])*np.sin(OpOptim.x[1]), np.cos(OpOptim.x[0])])
+    T_c2_c1 = ensamble_T(R_c2_c1, t_c2_c1)
+    points_3d = np.concatenate((OpOptim.x[5:8], np.array([1.0])), axis=0)
+    for i in range(X_3d.shape[0]-1):
+        points_3d = np.vstack((points_3d, np.concatenate((OpOptim.x[8+3*i: 8+3*i+3], np.array([1.0])) ,axis=0)))
+
+    # Plot the 3D points
+    fig = plt.figure()
+    ax = plt.axes(projection='3d', adjustable='box')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+
+    drawRefSystem(ax, T_w_c1, '-', 'C1')
+    drawRefSystem(ax, T_w_c1 @ np.linalg.inv(T_c2_c1) , '-', 'C2')
+    ax.scatter(points_3d[:,0], points_3d[:,1], points_3d[:,2], marker='.')
+    xFakeBoundingBox = np.linspace(0, 4, 2)
+    yFakeBoundingBox = np.linspace(0, 4, 2)
+    zFakeBoundingBox = np.linspace(0, 4, 2)
+    ax.plot(xFakeBoundingBox, yFakeBoundingBox, zFakeBoundingBox, 'w.')
+    plt.show()
+
+    P1 = aux_matrix @ T_w_c1
+    P2 = aux_matrix @ (T_w_c1 @ T_c2_c1)
+
+    x1_p = P1 @ points_3d.T
+    x1_p = x1_p / x1_p[2, :]
+    x2_p = P2 @ points_3d.T
+    x2_p = x2_p / x2_p[2, :]
+
+    fig, ax = plt.subplots(1,2, figsize=(10,5))
+    ax[0].imshow(img1)
+    ax[0].set_title('Residuals after Bundle adjustment Image1')
+    plotResidual2(kp_new1, x1_p.T, 'k-', ax[0])
+    ax[1].imshow(img2)
+    ax[1].set_title('Residuals after Bundle adjustment Image2')
+    plotResidual2(kp_new2, x2_p.T, 'k-', ax[1])
+    plt.show()
+
+    P_old = DLTcamera(kp_old, points_3d)
+    R_c3_c1, t_c3_c1, K_c3_c1 = decompose_P_matrix(P_old)
+    T_c3_c1 = ensamble_T(R_c3_c1, t_c3_c1)
+
+    fig = plt.figure()
+    ax = plt.axes(projection='3d', adjustable='box')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+
+    drawRefSystem(ax, T_w_c1, '-', 'C1')
+    drawRefSystem(ax, T_w_c1 @ np.linalg.inv(T_c2_c1) , '-', 'C2')
+    drawRefSystem(ax, T_w_c1 @ np.linalg.inv(T_c3_c1) , '-', 'C old')
+    ax.scatter(points_3d[:,0], points_3d[:,1], points_3d[:,2], marker='.')
+    xFakeBoundingBox = np.linspace(0, 4, 2)
+    yFakeBoundingBox = np.linspace(0, 4, 2)
+    zFakeBoundingBox = np.linspace(0, 4, 2)
+    ax.plot(xFakeBoundingBox, yFakeBoundingBox, zFakeBoundingBox, 'w.')
     plt.show()
