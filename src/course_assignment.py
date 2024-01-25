@@ -237,7 +237,7 @@ def decompose_essential_matrix(x1, x2, E, K, idx=None):
             if np.linalg.det(R) < 0:
                 R *= -1
                 i *= -1
-                solutions.append(ensamble_T(R, i))
+            solutions.append(ensamble_T(R, i))
 
     points_front = []
     points = []
@@ -245,11 +245,85 @@ def decompose_essential_matrix(x1, x2, E, K, idx=None):
         v1, v2 = points_in_front_of_both_cameras(x1, x2, T, K)
         points_front.append(v1)
         points.append(v2)
-    T = solutions[np.argmax(points_front)]
+    
     if idx is None:
+        T = solutions[np.argmax(points_front)]
         return T, np.array(points[np.argmax(points_front)])
     else:
         return solutions[idx], np.array(points[idx])
+
+def crossMatrixInv(M):
+    x = [M[2, 1], M[0, 2], M[1, 0]]
+    return x
+
+def crossMatrix(x):
+    M = np.array([[0, -x[2], x[1]],
+    [x[2], 0, -x[0]],
+    [-x[1], x[0], 0]], dtype="object")
+    return M
+
+
+def resBundleProjection(Op, x1Data, x2Data, K_c, nPoints):
+    """
+    -input:
+    Op: Optimization parameters: this must include a
+    paramtrization for T_21 (reference 1 seen from reference 2)
+    in a proper way and for X1 (3D points in ref 1)
+    x1Data: (3xnPoints) 2D points on image 1 (homogeneous
+    coordinates)
+    x2Data: (3xnPoints) 2D points on image 2 (homogeneous
+    coordinates)
+    K_c: (3x3) Intrinsic calibration matrix
+    nPoints: Number of points
+    -output:
+    res: residuals from the error between the 2D matched points
+    and the projected points from the 3D points
+    (2 equations/residuals per 2D point)
+    """
+
+    '''
+    Op[0:1] -> theta, phi
+    Op[2:5] -> Rx,Ry,Rz
+    Op[5:5 + nPoints*3] -> 3DXx,3DXy,3DXz
+    '''
+    # Bundle adjustment using least squares function
+    idem = np.append(np.eye(3), np.zeros((3, 1)), axis=1)
+    R = sc.linalg.expm(crossMatrix(Op[2:5]))
+    t = np.array([np.sin(Op[0])*np.cos(Op[1]), np.sin(Op[0])*np.sin(Op[1]), np.cos(Op[0])]).reshape(-1,1)
+    theta_ext_1 = K_c @ idem
+    T = np.hstack((R, t))
+    theta_ext_2 =  K_c @ T #Proyection matrix
+
+    # Compute the 3D points
+    X_3D = np.hstack((Op[5:].reshape(-1, 3), np.ones((nPoints, 1))))
+
+    projection1 = theta_ext_1 @ X_3D.T
+    projection1 = projection1[:2, :] / projection1[2, :]
+    res1 = x1Data[:, :nPoints].T - projection1.T
+
+    projection2 = theta_ext_2 @ X_3D.T
+    projection2 = projection2[:2, :] / projection2[2, :]
+    res2 = x2Data[:, :nPoints].T - projection2.T
+
+    res = np.hstack((res1, res2)).flatten()
+
+    return np.array(res)
+
+def plotResidual2(x,xProjected,strStyle, ax):
+    """
+        Plot the residual between an image point and an estimation based on a projection model.
+         -input:
+             x: Image points.
+             xProjected: Projected points.
+             strStyle: Line style.
+         -output: None
+         """
+
+    # Plot the line between each point and its projection also plot the point with a blue dot and the projection with a red cross
+    for k in range(x.shape[0]):
+        ax.plot([x[k, 0], xProjected[k, 0]], [x[k, 1], xProjected[k, 1]], strStyle)
+        ax.plot(x[k, 0], x[k, 1], 'bo')
+        ax.plot(xProjected[k, 0], xProjected[k, 1], 'rx')
 
 if __name__ == '__main__':
     Kc_new = np.loadtxt('calibration_matrix.txt')
@@ -262,6 +336,10 @@ if __name__ == '__main__':
     img1 = cv2.imread(path_image_new_1)
     img2 = cv2.imread(path_image_new_2)
     img_old = cv2.imread(path_image_old)
+
+    img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
+    img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2RGB)
+    img_old = cv2.cvtColor(img_old, cv2.COLOR_BGR2RGB)
 
     print('Imgs loaded')
 
@@ -299,9 +377,10 @@ if __name__ == '__main__':
 
     E = compute_essential_matrix(F, Kc_new)
 
-    Rt, X_3d = decompose_essential_matrix(kp_new1[:,0:2].T, kp_new2[:,0:2].T, E, Kc_new)
+    T_c2_c1, X_3d = decompose_essential_matrix(kp_new1[:,0:2].T, kp_new2[:,0:2].T, E, Kc_new)
     print(X_3d.shape)
 
+    T_w_c1 = ensamble_T(np.diag((1, 1, 1)), np.zeros((3)))
 
     # Plot the 3D points
     fig = plt.figure()
@@ -310,7 +389,45 @@ if __name__ == '__main__':
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
 
-    drawRefSystem(ax, np.eye(4), '-', 'C1')
-    drawRefSystem(ax, np.eye(4) @ np.linalg.inv(Rt) , '-', 'C2')
+    drawRefSystem(ax, T_w_c1, '-', 'C1')
+    drawRefSystem(ax, T_w_c1 @ np.linalg.inv(T_c2_c1) , '-', 'C2')
     ax.scatter(X_3d[:,0], X_3d[:,1], X_3d[:,2], marker='.')
+    xFakeBoundingBox = np.linspace(0, 4, 2)
+    yFakeBoundingBox = np.linspace(0, 4, 2)
+    zFakeBoundingBox = np.linspace(0, 4, 2)
+    ax.plot(xFakeBoundingBox, yFakeBoundingBox, zFakeBoundingBox, 'w.')
+    plt.show()
+
+    R = T_c2_c1[0:3, 0:3]
+    t = T_c2_c1[0:3, 3].reshape(-1,1)
+
+    elevation = np.arccos(t[2])
+    azimuth = np.arctan2(t[1], t[0])
+
+    Op = [elevation, azimuth] + crossMatrixInv(sc.linalg.logm(R)) + X_3d[:,0:3].flatten().tolist()
+    Op = np.array(Op, dtype="object")
+
+    res = resBundleProjection(Op, kp_new1[:,0:2].T, kp_new2[:,0:2].T, Kc_new, kp_new1.shape[0])
+
+    print(res.shape)
+
+    zeros = np.zeros(3).reshape(3,1)
+    idem = np.hstack((np.identity(3),zeros))
+    aux_matrix = np.dot(Kc_new,idem)
+
+    P1 = aux_matrix @ T_w_c1
+    P2 = aux_matrix @ (T_w_c1 @ T_c2_c1)
+
+    x1_p = P1 @ X_3d.T
+    x1_p = x1_p / x1_p[2, :]
+    x2_p = P2 @ X_3d.T
+    x2_p = x2_p / x2_p[2, :]
+
+    fig, ax = plt.subplots(1,2, figsize=(10,5))
+    ax[0].imshow(img1)
+    ax[0].set_title('Residuals after Bundle adjustment Image1')
+    plotResidual2(kp_new1, x1_p.T, 'k-', ax[0])
+    ax[1].imshow(img2)
+    ax[1].set_title('Residuals after Bundle adjustment Image2')
+    plotResidual2(kp_new2, x2_p.T, 'k-', ax[1])
     plt.show()
