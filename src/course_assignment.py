@@ -190,12 +190,7 @@ def points_in_front_of_both_cameras(x1, x2, T, K):
 
     points_front = []
     for point in points3d:
-        # if point[2] < 0:
-            # continue
-
-        # z > 0 in C1 frame
-        # pointFrame = T @ point.reshape(-1,1)
-        # if pointFrame[2] > 0:
+        
         R = T[0:3, 0:3]
         t = T[0:3, 3]
         if point[2] > 0 and np.dot(R[2], point[0:3] - t) > 0:
@@ -218,7 +213,7 @@ def ensamble_T(R_w_c, t_w_c) -> np.array:
 def decompose_essential_matrix(x1, x2, E, K, idx=None):
     # Compute the SVD of the essential matrix
     U, _, V = np.linalg.svd(E)
-    t = U[:,2]
+    t = U[:3, -1]
     
     # Ensure that the determinant of U and Vt is positive (to ensure proper rotation)
 
@@ -338,28 +333,11 @@ def DLTcamera(matches, x_3d):
 
     _, _, V = np.linalg.svd(A)
     P = V[-1,:].reshape((3,4))
+
+    # Normalize P
+    P /= P[2,3]
+
     return P
-
-def decompose_P_matrix(P):
-    # Computing the optical center pose in world frame solving svd(P)
-    _, _, V = np.linalg.svd(P)
-    C = V[-1, :]
-    C = C / C[3]
-    C = C[0:3]
-
-    # rq decomposition of the camera matrix
-    M_gorro = np.sign(np.linalg.det(P[:,0:3])) * P[:,0:3]
-    K_gorro, R_gorro = sc.linalg.rq(M_gorro)
-
-    # Check that the diagonal elements of K are positive
-    D = np.diag(np.sign(np.diag(K_gorro)))
-    R = D @ R_gorro
-    K_raya = D @ K_gorro
-    K = K_raya / K_raya[2, 2]
-
-    # Compute the translation vector
-    t = np.linalg.inv(K) @ P[:, 3]
-    return R, t, K
 
 if __name__ == '__main__':
     Kc_new = np.loadtxt('calibration_matrix.txt')
@@ -460,6 +438,7 @@ if __name__ == '__main__':
 
     elevation = np.arccos(t[2])
     azimuth = np.arctan2(t[1], t[0])
+    # azimuth = np.arccos(t[0] / np.arcsin(elevation))
 
     Op = [elevation, azimuth] + crossMatrixInv(sc.linalg.logm(R)) + X_3d[:,0:3].flatten().tolist()
 
@@ -506,7 +485,13 @@ if __name__ == '__main__':
     plt.show()
 
     P_old = DLTcamera(kp_old, points_3d)
-    R_c3_c1, t_c3_c1, K_c3_c1 = decompose_P_matrix(P_old)
+    print('P shape ', P_old.shape)
+    # R_c3_c1, t_c3_c1, K_c3_c1 = decompose_P_matrix(P_old)
+    M = P_old[0:3,0:3]
+    [K_old, R_c3_c1, t_c3_c1] = cv2.decomposeProjectionMatrix(np.sign(np.linalg.det(M)) * P_old)[:3]
+
+    t_c3_c1 = (t_c3_c1[:3] / t_c3_c1[3]).reshape((3,))
+
     T_c3_c1 = ensamble_T(R_c3_c1, t_c3_c1)
 
     fig = plt.figure()
