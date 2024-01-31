@@ -27,3 +27,19 @@ def drawRefSystem(ax, T_w_c, strStyle, nameStr):
     draw3DLine(ax, T_w_c[0:3, 3:4], T_w_c[0:3, 3:4] + T_w_c[0:3, 1:2], strStyle, 'g', 1)
     draw3DLine(ax, T_w_c[0:3, 3:4], T_w_c[0:3, 3:4] + T_w_c[0:3, 2:3], strStyle, 'b', 1)
     ax.text(np.squeeze( T_w_c[0, 3]+0.1), np.squeeze( T_w_c[1, 3]+0.1), np.squeeze( T_w_c[2, 3]+0.1), nameStr)
+
+def plotResidual2(x,xProjected,strStyle, ax):
+    """
+        Plot the residual between an image point and an estimation based on a projection model.
+         -input:
+             x: Image points.
+             xProjected: Projected points.
+             strStyle: Line style.
+         -output: None
+         """
+
+    # Plot the line between each point and its projection also plot the point with a blue dot and the projection with a red cross
+    for k in range(x.shape[0]):
+        ax.plot([x[k, 0], xProjected[k, 0]], [x[k, 1], xProjected[k, 1]], strStyle)
+        ax.plot(x[k, 0], x[k, 1], 'bo')
+        ax.plot(xProjected[k, 0], xProjected[k, 1], 'rx')

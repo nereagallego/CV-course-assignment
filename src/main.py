@@ -71,10 +71,30 @@ if __name__ == '__main__':
     ax.set_zlabel('Z')
 
     drawRefSystem(ax, T_w_c1, '-', 'C1')
-    drawRefSystem(ax, T_w_c1 @ np.linalg.inv(T_c2_c1) , '-', 'C2')
+    T_w_c2 = T_w_c1 @ np.linalg.inv(T_c2_c1)
+    drawRefSystem(ax, T_w_c2 , '-', 'C2')
     ax.scatter(X_3d[:,0], X_3d[:,1], X_3d[:,2], marker='.')
     xFakeBoundingBox = np.linspace(0, 4, 2)
     yFakeBoundingBox = np.linspace(0, 4, 2)
     zFakeBoundingBox = np.linspace(0, 4, 2)
     ax.plot(xFakeBoundingBox, yFakeBoundingBox, zFakeBoundingBox, 'w.')
+    plt.show()
+
+    idem = np.hstack((np.identity(3), np.zeros(3).reshape(3,1)))
+    aux_matrix = np.dot(Kc_new,idem)
+    P2 = aux_matrix @ np.linalg.inv(T_w_c2)
+
+    P1_est = Kc_new @ idem
+    x1_p = P1_est @ X_3d.T
+    x1_p = x1_p / x1_p[2, :]
+    x2_p = P2 @ X_3d.T
+    x2_p = x2_p / x2_p[2, :]
+
+    fig, ax = plt.subplots(1,2, figsize=(10,5))
+    ax[0].imshow(img1, cmap='gray', vmin=0, vmax=255)
+    ax[0].set_title('Residuals after Bundle adjustment Image1')
+    plotResidual2(kp_new1, x1_p.T, 'k-', ax[0])
+    ax[1].imshow(img2, cmap='gray', vmin=0, vmax=255)
+    ax[1].set_title('Residuals after Bundle adjustment Image2')
+    plotResidual2(kp_new2, x2_p.T, 'k-', ax[1])
     plt.show()

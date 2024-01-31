@@ -117,18 +117,17 @@ def triangulation(P1, P2, points1, points2):
     for i in range(points1.shape[1]):
         p1 = points1[:, i]
         p2 = points2[:, i]
-        # A = [p1[0] * P1[2, :] - P1[0, :], p1[1] * P1[2, :] - P1[1, :], p2[0] * P2[2, :] - P2[0, :], p2[1] * P2[2, :] - P2[1, :]]
         A = np.vstack((p1[0] * P1[2, :] - P1[0, :], 
                        p1[1] * P1[2, :] - P1[1, :], 
                        p2[0] * P2[2, :] - P2[0, :], 
                        p2[1] * P2[2, :] - P2[1, :]))
         _, _, V = np.linalg.svd(A)
         X = V[-1, :]
-        points3D[:, i] = X / X[3]
+        X = X / X[3]  # Normalize the 3D point
+        points3D[:, i] = X
 
-    return points3D
+    return points3D  
 
-" Structure for motion function "
 # Estimate the camera pose from the Essential matrix
 def sfm(F, K_c, x1, x2):
     # Compute the essential matrix
@@ -151,6 +150,9 @@ def sfm(F, K_c, x1, x2):
 
     Ts = []
     for R, t in zip([R1, R1, R2, R2], [t1, t2, t1, t2]):
+        if np.linalg.det(R) < 0:
+            R *= -1
+            t *= -1
         Ts.append(np.hstack((R, t.reshape(3, 1))))
 
     # Triangulate the points, check if the triangulation is in front of the cameras and select the best solution
@@ -162,16 +164,17 @@ def sfm(F, K_c, x1, x2):
         x_3d = triangulation(P1, P, x1, x2)
         points_front = []
         for i in range(x_3d.shape[1]):
-            if x_3d[2,i] > 0  and np.dot(T[2:0:3], x_3d[:,i] - T[0:3, 3]) > 0:
+            if x_3d[2,i] > 0  and np.dot(T[2, 0:3], x_3d[:3,i] - T[0:3, 3]) > 0:
                 points_front.append(x_3d[:,i])
         if len(points_front) > max:
             max = len(points_front)
             best = T
-            X = np.array(points_front).T
+            X = np.array(points_front)
     
     if best is None:
         print("No solution found")
+        return None, None
     
-    return best, X
+    return ensamble_T(best[0:3, 0:3], best[0:3, 3]), X
     
 
