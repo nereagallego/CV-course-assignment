@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
 def draw3DLine(ax, xIni, xEnd, strStyle, lColor, lWidth):
     """
@@ -43,3 +44,28 @@ def plotResidual2(x,xProjected,strStyle, ax):
         ax.plot([x[k, 0], xProjected[k, 0]], [x[k, 1], xProjected[k, 1]], strStyle)
         ax.plot(x[k, 0], x[k, 1], 'bo')
         ax.plot(xProjected[k, 0], xProjected[k, 1], 'rx')
+
+def plotNumbered3DPoints(ax, X,strColor, offset):
+    """
+        Plot indexes of points on a 3D plot.
+         -input:
+             ax: axis handle
+             X: Points coordinates.
+             strColor: Color of the text.
+             offset: Offset from the point to the text.
+         -output: None
+         """
+    for k in range(X.shape[1]):
+        ax.text(X[0, k]+offset, X[1, k]+offset, X[2,k]+offset, str(k), color=strColor)
+
+def plotNumberedImagePoints(x,strColor,offset, ax):
+    """
+        Plot indexes of points on a 2D image.
+         -input:
+             x: Points coordinates.
+             strColor: Color of the text.
+             offset: Offset from the point to the text.
+         -output: None
+         """
+    for k in range(x.shape[1]):
+        ax.text(x[0, k]+offset, x[1, k]+offset, str(k), color=strColor)
