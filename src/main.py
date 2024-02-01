@@ -16,8 +16,8 @@ if __name__ == '__main__':
     Kc_new = np.loadtxt('calibration_matrix.txt')
 
 
-    path_image_new_1 = 'imgs1/img_new1.jpg'
-    path_image_new_2 = 'imgs1/img_new3.jpg'
+    path_image_new_1 = 'imgs1/img_new1_undistorted.jpg'
+    path_image_new_2 = 'imgs1/img_new3_undistorted.jpg'
     path_image_old = 'imgs1/img_old.jpg'
 
     img1 = cv2.imread(path_image_new_1)
@@ -30,11 +30,11 @@ if __name__ == '__main__':
 
     print('Imgs loaded')
 
-    path = './output/img_new1_img_new3_matches.npz'
+    path = './output/img_new1_undistorted_img_new3_undistorted_matches.npz'
     npz = np.load(path)
     keypoints_SG_0_new = npz['keypoints0']
     keypoints_SG_1_new = npz['keypoints1']
-    path2 = './output/img_new1_img_old_matches.npz'
+    path2 = './output/img_new1_undistorted_img_old_matches.npz'
     npz2 = np.load(path2)
     keypoints_SG_0_old = npz2['keypoints0']
     keypoints_SG_1_old = npz2['keypoints1']
@@ -92,9 +92,59 @@ if __name__ == '__main__':
 
     fig, ax = plt.subplots(1,2, figsize=(10,5))
     ax[0].imshow(img1, cmap='gray', vmin=0, vmax=255)
-    ax[0].set_title('Residuals after Bundle adjustment Image1')
+    ax[0].set_title('Residuals before Bundle adjustment Image1')
     plotResidual2(kp_new1, x1_p.T, 'k-', ax[0])
     ax[1].imshow(img2, cmap='gray', vmin=0, vmax=255)
+    ax[1].set_title('Residuals before Bundle adjustment Image2')
+    plotResidual2(kp_new2, x2_p.T, 'k-', ax[1])
+    plt.show()
+
+    R = T_c2_c1[0:3, 0:3]
+    t = T_c2_c1[0:3, 3].reshape(-1,1)
+
+    elevation = np.arccos(t[2])
+    azimuth = np.arctan2(t[1], t[0])
+
+    Op = [elevation, azimuth] + crossMatrixInv(sc.linalg.logm(R)) + X_3d[:,0:3].flatten().tolist()
+
+    OpOptim = scOptim.least_squares(resBundleProjection, Op, args=(kp_new1[:,0:2].T, kp_new2[:,0:2].T, Kc_new, kp_new1.shape[0]), method='trf', loss='huber', verbose=2)
+
+    R_c2_c1 = sc.linalg.expm(crossMatrix(OpOptim.x[2:5]))
+    t_c2_c1 = np.array([np.sin(OpOptim.x[0])*np.cos(OpOptim.x[1]), np.sin(OpOptim.x[0])*np.sin(OpOptim.x[1]), np.cos(OpOptim.x[0])])
+    T_c2_c1 = ensamble_T(R_c2_c1, t_c2_c1)
+    points_3d = np.concatenate((OpOptim.x[5:8], np.array([1.0])), axis=0)
+    for i in range(X_3d.shape[0]-1):
+        points_3d = np.vstack((points_3d, np.concatenate((OpOptim.x[8+3*i: 8+3*i+3], np.array([1.0])) ,axis=0)))
+
+    # Plot the 3D points
+    fig = plt.figure()
+    ax = plt.axes(projection='3d', adjustable='box')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+
+    drawRefSystem(ax, T_w_c1, '-', 'C1')
+    drawRefSystem(ax, T_w_c1 @ np.linalg.inv(T_c2_c1) , '-', 'C2')
+    ax.scatter(points_3d[:,0], points_3d[:,1], points_3d[:,2], marker='.')
+    xFakeBoundingBox = np.linspace(0, 4, 2)
+    yFakeBoundingBox = np.linspace(0, 4, 2)
+    zFakeBoundingBox = np.linspace(0, 4, 2)
+    ax.plot(xFakeBoundingBox, yFakeBoundingBox, zFakeBoundingBox, 'w.')
+    plt.show()
+
+    P1 = aux_matrix @ T_w_c1
+    P2 = aux_matrix @ (T_w_c1 @ T_c2_c1)
+
+    x1_p = P1 @ points_3d.T
+    x1_p = x1_p / x1_p[2, :]
+    x2_p = P2 @ points_3d.T
+    x2_p = x2_p / x2_p[2, :]
+
+    fig, ax = plt.subplots(1,2, figsize=(10,5))
+    ax[0].imshow(img1)
+    ax[0].set_title('Residuals after Bundle adjustment Image1')
+    plotResidual2(kp_new1, x1_p.T, 'k-', ax[0])
+    ax[1].imshow(img2)
     ax[1].set_title('Residuals after Bundle adjustment Image2')
     plotResidual2(kp_new2, x2_p.T, 'k-', ax[1])
     plt.show()

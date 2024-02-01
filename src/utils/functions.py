@@ -1,4 +1,5 @@
 import numpy as np
+import scipy as sc
 
 def ensamble_T(R_w_c, t_w_c) -> np.array:
     """
@@ -176,5 +177,63 @@ def sfm(F, K_c, x1, x2):
         return None, None
     
     return ensamble_T(best[0:3, 0:3], best[0:3, 3]), X
+
+
+def crossMatrixInv(M):
+    x = [M[2, 1], M[0, 2], M[1, 0]]
+    return x
+
+def crossMatrix(x):
+    M = np.array([[0, -x[2], x[1]],
+    [x[2], 0, -x[0]],
+    [-x[1], x[0], 0]], dtype="object")
+    return M
+
+
+def resBundleProjection(Op, x1Data, x2Data, K_c, nPoints):
+    """
+    -input:
+    Op: Optimization parameters: this must include a
+    paramtrization for T_21 (reference 1 seen from reference 2)
+    in a proper way and for X1 (3D points in ref 1)
+    x1Data: (3xnPoints) 2D points on image 1 (homogeneous
+    coordinates)
+    x2Data: (3xnPoints) 2D points on image 2 (homogeneous
+    coordinates)
+    K_c: (3x3) Intrinsic calibration matrix
+    nPoints: Number of points
+    -output:
+    res: residuals from the error between the 2D matched points
+    and the projected points from the 3D points
+    (2 equations/residuals per 2D point)
+    """
+
+    '''
+    Op[0:1] -> theta, phi
+    Op[2:5] -> Rx,Ry,Rz
+    Op[5:5 + nPoints*3] -> 3DXx,3DXy,3DXz
+    '''
+    # Bundle adjustment using least squares function
+    idem = np.append(np.eye(3), np.zeros((3, 1)), axis=1)
+    R = sc.linalg.expm(crossMatrix(Op[2:5]))
+    t = np.array([np.sin(Op[0])*np.cos(Op[1]), np.sin(Op[0])*np.sin(Op[1]), np.cos(Op[0])]).reshape(-1,1)
+    theta_ext_1 = K_c @ idem
+    T = np.hstack((R, t))
+    theta_ext_2 =  K_c @ T #Proyection matrix
+
+    # Compute the 3D points
+    X_3D = np.hstack((Op[5:].reshape(-1, 3), np.ones((nPoints, 1))))
+
+    projection1 = theta_ext_1 @ X_3D.T
+    projection1 = projection1[:2, :] / projection1[2, :]
+    res1 = x1Data[:, :nPoints].T - projection1.T
+
+    projection2 = theta_ext_2 @ X_3D.T
+    projection2 = projection2[:2, :] / projection2[2, :]
+    res2 = x2Data[:, :nPoints].T - projection2.T
+
+    res = np.hstack((res1, res2)).flatten()
+
+    return np.array(res)
     
 
