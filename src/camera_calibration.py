@@ -80,9 +80,9 @@ if __name__ == '__main__':
 
     # undistorting the images
     print('Undistoring the images')
-    images = glob.glob('pilar_*.jpg')
+    images = os.listdir('imgs1')
     for fname in images:
-        img = cv.imread(fname)
+        img = cv.imread('imgs1/'+fname)
         img_rows = img.shape[1]
         img_cols = img.shape[0]
         new_img_size = (int(img_rows / image_downsize_factor), int(img_cols / image_downsize_factor))
@@ -91,6 +91,8 @@ if __name__ == '__main__':
         print(fname)
         undist_image = cv.undistort(img, mtx, dist)
         cv.imshow(fname, undist_image)
+        fname = fname.split('.')
+        cv.imwrite('imgs1/'+fname[0] + '_undistorted'+'.jpg', undist_image)
 
     cv.waitKey(0)
 
