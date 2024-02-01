@@ -130,7 +130,7 @@ def triangulation(P1, P2, points1, points2):
     return points3D  
 
 # Estimate the camera pose from the Essential matrix
-def sfm(F, K_c, x1, x2):
+def sfm(F, K_c, x1, x2, x3):
     # Compute the essential matrix
     E = K_c.T @ F @ K_c
 
@@ -170,7 +170,8 @@ def sfm(F, K_c, x1, x2):
         if len(points_front) > max:
             max = len(points_front)
             best = T
-            X = np.array(points_front)
+            X = x_3d.T
+            
     
     if best is None:
         print("No solution found")
@@ -235,5 +236,32 @@ def resBundleProjection(Op, x1Data, x2Data, K_c, nPoints):
     res = np.hstack((res1, res2)).flatten()
 
     return np.array(res)
+
+"the unknowns are the camera matrix parameters"
+"Each 2D-3D correspondence gives rise to two equations"
+def DLTcamera(matches, x_3d):
+    A = np.empty((0, 12))                               # DLT, diapo 13 tema 6
+    for i in range(x_3d.shape[0]):   
+        A = np.vstack((
+            A,
+            np.concatenate((-x_3d[i,:], np.zeros((4)), matches[i,0]*x_3d[i,:])),
+            np.concatenate((np.zeros((4)), -x_3d[i,:], matches[i,1]*x_3d[i,:])),
+        ))
+    u, s, vh = np.linalg.svd(A)
+    P3 = np.reshape(vh[-1, :], (3,4))
+    return P3
+    # A = np.zeros((2*len(matches), 12))
+
+    # for i in range(len(matches)):
+    #     A[2*i,:] = np.array([-x_3d[i,0], -x_3d[i,1], -x_3d[i,2], -x_3d[i,3], 0, 0, 0, 0, matches[i][0]*x_3d[i,0], matches[i][0]*x_3d[i,1], matches[i][0]*x_3d[i,2], matches[i][0] * x_3d[i,3]])
+    #     A[2*i+1,:] = np.array([0, 0, 0, 0, -x_3d[i,0], -x_3d[i,1], -x_3d[i,2], -x_3d[i,3], matches[i][1]*x_3d[i,0], matches[i][1]*x_3d[i,1], matches[i][1]*x_3d[i,2], matches[i][1] * x_3d[i,3]])
+
+    # _, _, V = np.linalg.svd(A)
+    # P = V[-1,:].reshape((3,4))
+
+    # # Normalize P
+    # P /= P[2,3]
+
+    # return P
     
 
