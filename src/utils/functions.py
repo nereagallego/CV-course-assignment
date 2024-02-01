@@ -264,4 +264,73 @@ def DLTcamera(matches, x_3d):
 
     # return P
     
+def resBundleProjection_n_cameras(Op, xData, nCameras, K_c, nPoints):
+    """
+    -input:
+    Op: Optimization parameters: this must include a
+    paramtrization for T_21 (reference 1 seen from reference 2)
+    in a proper way and for X1 (3D points in ref 1)
+    x1Data: (3xnPoints) 2D points on image 1 (homogeneous
+    coordinates)
+    x2Data: (3xnPoints) 2D points on image 2 (homogeneous
+    coordinates)
+    K_c: (3x3) Intrinsic calibration matrix
+    nPoints: Number of points
+    -output:
+    res: residuals from the error between the 2D matched points
+    and the projected points from the 3D points
+    (2 equations/residuals per 2D point)
 
+    ASSUMING AT LEAST 3 CAMERAS !!!
+    """
+
+    '''
+    Op[0:1] -> theta, phi
+    Op[2:4] -> Rx,Ry,Rz
+    Op[5:7] -> tx, ty, tz (camera 3 in advance)
+    Op[8:10] -> Rx,Ry,Rz
+    Op[11:19] -> Kc_old
+    ...
+    Op[] -> 3DXx,3DXy,3DXz
+    '''
+    # Bundle adjustment using least squares function
+    idem = np.append(np.eye(3), np.zeros((3, 1)), axis=1)
+
+    theta_ext_1 = K_c @ idem
+
+
+    theta_ext = []
+    theta_ext.append(theta_ext_1)
+
+    for i in range(nCameras - 1):
+        # R = sc.linalg.expm(crossMatrix(Op[2+5*i:5+5*i]))
+        if i == 0:
+            # No se que hay que poner aqui
+            t = np.array([np.sin(Op[0])*np.cos(Op[1]), np.sin(Op[0])*np.sin(Op[1]), np.cos(Op[0])]).reshape(-1,1)
+            R = sc.linalg.expm(crossMatrix(Op[2+5*i:5+5*i]))
+        else:
+            t = np.array([Op[6*(i-1)+5],Op[6*(i-1)+6],Op[6*(i-1)+7]]).reshape(-1,1)
+            R = sc.linalg.expm(crossMatrix(Op[6*(i-1)+8:6*(i-1)+11]))
+        T = np.hstack((R, t))
+        if i < 2:
+            theta_ext.append(K_c @ T)
+        else:
+            K = Op[11:20].reshape(3,3)
+            theta_ext.append(K @ T)
+
+
+    # Compute the residuals
+   
+    Xpoints = xData
+    # Xpoints = xData.reshape(nCameras, nPoints, 2)
+    idx_3D = 20
+    X_3D = np.hstack((Op[idx_3D:].reshape(-1, 3), np.ones((nPoints, 1))))
+    # print(X_3D)
+    res = []
+    for i in range(nCameras):
+        projection = theta_ext[i] @ X_3D.T
+        projection = projection[:2, :] / projection[2, :]
+        res.append((Xpoints[i] - projection.T).flatten())
+
+    # print(res)
+    return np.array(res).flatten()
