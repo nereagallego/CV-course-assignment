@@ -7,13 +7,16 @@ def intersection(k1, k1_2, k2, k3):
     k3_n = []
     k1_n = []
     i = 0
+    added = np.full(k1_2.shape[0], False, dtype=bool)
     for k in k1:
         j = 0
         for k2_ in k1_2:
-            if np.linalg.norm(np.array(k) - np.array(k2_)) <= 2:    
+            if np.linalg.norm(np.array(k) - np.array(k2_)) <= 2 and not added[j]:
+                added[j] = True    
                 k2_n.append(k2[i,:])
                 k1_n.append(k)
                 k3_n.append(k3[j,:])
+                break
             j += 1
         i += 1
     return np.array(k1_n), np.array(k2_n), np.array(k3_n)
