@@ -312,7 +312,7 @@ def resBundleProjection_n_cameras(Op, xData, nCameras, K_c, nPoints):
             t = np.array([Op[6*(i-1)+5],Op[6*(i-1)+6],Op[6*(i-1)+7]]).reshape(-1,1)
             R = sc.linalg.expm(crossMatrix(Op[6*(i-1)+8:6*(i-1)+11]))
         T = np.hstack((R, t))
-        if i < 2:
+        if i < 1:
             theta_ext.append(K_c @ T)
         else:
             K = Op[11:20].reshape(3,3)
