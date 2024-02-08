@@ -217,5 +217,40 @@ if __name__ == '__main__':
     Op2 = [elevation , azimuth] + crossMatrixInv(sc.linalg.logm(R_c2_c1)) + [t_c3_c1[0], t_c3_c1[1], t_c3_c1[2]] + crossMatrixInv(sc.linalg.logm(R_c3_c1)) + K_old.flatten().tolist() + points_3d[:,0:3].flatten().tolist()
 
     X2 = np.stack((kp_new1[:,0:2], kp_new2[:,0:2], kp_old[:,0:2]))
-    OpOptim2 = scOptim.least_squares(resBundleProjection_n_cameras, Op2, args=(X2, 3, Kc_new , kp_new1.shape[0]))
+    OpOptim2 = scOptim.least_squares(resBundleProjection_n_cameras, Op2, args=(X2, 3, Kc_new , kp_new1.shape[0]),  method='trf', loss='huber', verbose=2)
+    OpOptim2 = OpOptim2.x
+    np.savetxt('Optimization2.txt', OpOptim2)
 
+    R_c2_c1 = sc.linalg.expm(crossMatrix(OpOptim2[2:5]))
+    R_c2_c1 = sc.linalg.expm(crossMatrix(OpOptim2[2:5]))
+    t_c2_c1 = np.array([np.sin(OpOptim2[0])*np.cos(OpOptim2[1]), np.sin(OpOptim2[0])*np.sin(OpOptim2[1]), np.cos(OpOptim2[0])]).reshape(-1,1)
+    T_c2_c1_op = ensamble_T(R_c2_c1, t_c2_c1.T)
+
+    R_c3_c1 = sc.linalg.expm(crossMatrix(OpOptim2[8:11]))
+    t_c3_c1 = np.array([OpOptim2[5],OpOptim2[6],OpOptim2[7]]).reshape(-1,1)
+    T_c3_c1_op = ensamble_T(R_c3_c1, t_c3_c1.T)
+    Kc_old = np.array(OpOptim2[11:20]).reshape(3,3)
+
+    points_3D_Op = np.concatenate((OpOptim2[20: 20+3], np.array([1.0])), axis=0)
+
+    for i in range(X_3d.shape[0]-1):
+        points_3D_Op = np.vstack((points_3D_Op, np.concatenate((OpOptim2[20+3+3*i: 20+3+3*i+3], np.array([1.0])) ,axis=0)))
+
+
+    #### Draw 3D ################
+    fig3D = plt.figure(2)
+    ax = plt.axes(projection='3d', adjustable='box')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+
+    drawRefSystem(ax, np.eye(4, 4), '-', 'C1')
+    drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c2_c1_op), '-', 'C2_BA')
+    drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c3_c1_op), '-', 'C3_BA')
+    ax.scatter(points_3d[:,0], points_3d[:,1], points_3d[:,2], marker='.')
+    # plotNumbered3DPoints(ax, points_3d.T, 'r', 0.1)
+    xFakeBoundingBox = np.linspace(0, 4, 2)
+    yFakeBoundingBox = np.linspace(0, 4, 2)
+    zFakeBoundingBox = np.linspace(0, 4, 2)
+    ax.plot(xFakeBoundingBox, yFakeBoundingBox, zFakeBoundingBox, 'w.')
+    plt.show()
