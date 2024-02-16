@@ -1,5 +1,6 @@
 import numpy as np
 import scipy as sc
+import cv2
 
 def ensamble_T(R_w_c, t_w_c) -> np.array:
     """
@@ -263,6 +264,20 @@ def DLTcamera(matches, x_3d):
     # P /= P[2,3]
 
     # return P
+
+def decomposeP(P):
+    M = P[:,:3]
+    out = cv2.decomposeProjectionMatrix(np.sign(np.linalg.det(M)) * P)
+    K, R, t = out[0], out[1], out[2].ravel()
+
+    K /= K[2][2]
+    R = np.linalg.inv(R)
+    t = t[:3] / t[3]
+
+    Tinv = ensamble_T(R, t)
+    T = np.linalg.inv(Tinv)
+
+    return K, T[0:3, 0:3], T[0:3, 3]
     
 def resBundleProjection_n_cameras(Op, xData, nCameras, K_c, nPoints):
     """

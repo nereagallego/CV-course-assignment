@@ -192,13 +192,19 @@ if __name__ == '__main__':
         plt.show()
 
     M = P_old[0:3,0:3]
-    [K_old, R_c3_c1, t_c1_c3] = cv2.decomposeProjectionMatrix(np.sign(np.linalg.det(M)) * P_old)[:3]
+    # [K_old, R_c3_c1, t_c1_c3] = cv2.decomposeProjectionMatrix(np.sign(np.linalg.det(M)) * P_old)[:3]
 
-    t_c1_c3 = (t_c1_c3[:3] / t_c1_c3[3]).reshape((3,))
-    R_c1_c3 = R_c3_c1.T
+    # t_c1_c3 = (t_c1_c3[:3] / t_c1_c3[3]).reshape((3,))
+    # R_c1_c3 = R_c3_c1.T
 
-    T_c1_c3 = ensamble_T(R_c1_c3, t_c1_c3)
-    T_c3_c1 = np.linalg.inv(T_c1_c3)
+    # T_c1_c3 = ensamble_T(R_c1_c3, t_c1_c3)
+    # T_c3_c1 = np.linalg.inv(T_c1_c3)
+
+    # K_old = K_old / K_old[2,2]
+
+    K_old, R_c3_c1, t_c3_c1 = decomposeP(P_old/P_old[-1,-1])
+    T_c3_c1 = ensamble_T(R_c3_c1, t_c3_c1)
+    T_c1_c3 = np.linalg.inv(T_c3_c1)
 
     fig = plt.figure()
     ax = plt.axes(projection='3d', adjustable='box')
@@ -225,7 +231,7 @@ if __name__ == '__main__':
     Op2 = [elevation , azimuth] + crossMatrixInv(sc.linalg.logm(R_c2_c1)) + [t_c3_c1[0], t_c3_c1[1], t_c3_c1[2]] + crossMatrixInv(sc.linalg.logm(R_c3_c1)) + K_old.flatten().tolist() + points_3d[:,0:3].flatten().tolist()
 
     X2 = np.stack((kp_new1[:,0:2], kp_new2[:,0:2], kp_old[:,0:2]))
-    OpOptim2 = scOptim.least_squares(resBundleProjection_n_cameras, Op2, args=(X2, 3, Kc_new , kp_new1.shape[0]),  method='trf', loss='huber', verbose=2, ftol=1e-4, xtol=1e-4, gtol=1e-4)
+    OpOptim2 = scOptim.least_squares(resBundleProjection_n_cameras, Op2, args=(X2, 3, Kc_new , kp_new1.shape[0]),  method='trf', loss='huber', verbose=2, ftol=1e-6, xtol=1e-6, gtol=1e-6)
     OpOptim2 = OpOptim2.x
     np.savetxt('Optimization2.txt', OpOptim2)
 
@@ -255,10 +261,32 @@ if __name__ == '__main__':
     drawRefSystem(ax, np.eye(4, 4), '-', 'C1')
     drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c2_c1_op), '-', 'C2_BA')
     drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c3_c1_op), '-', 'C3_BA')
-    ax.scatter(points_3d[:,0], points_3d[:,1], points_3d[:,2], marker='.')
+    ax.scatter(points_3D_Op[:,0], points_3D_Op[:,1], points_3D_Op[:,2], marker='.')
     # plotNumbered3DPoints(ax, points_3d.T, 'r', 0.1)
     xFakeBoundingBox = np.linspace(0, 4, 2)
     yFakeBoundingBox = np.linspace(0, 4, 2)
     zFakeBoundingBox = np.linspace(0, 4, 2)
     ax.plot(xFakeBoundingBox, yFakeBoundingBox, zFakeBoundingBox, 'w.')
     plt.show()
+
+    x1_p = P1 @ points_3D_Op.T
+    x1_p = x1_p / x1_p[2, :]
+    x2_p = P2 @ points_3D_Op.T
+    x2_p = x2_p / x2_p[2, :]
+    x3_p = (Kc_old @ T_c3_c1[:3,:]) @ points_3D_Op.T
+    x3_p = x3_p / x3_p[2,:]
+
+    if plot_flag or True:
+        fig, ax = plt.subplots(1,3, figsize=(10,5))
+        ax[0].imshow(img1)
+        ax[0].set_title('Residuals after Bundle adjustment Image1')
+        plotResidual2(kp_new1, x1_p.T, 'k-', ax[0])
+        # plotNumberedImagePoints(kp_new1[:,0:2].T, 'r',4, ax[0])
+        ax[1].imshow(img2)
+        ax[1].set_title('Residuals after Bundle adjustment Image2')
+        plotResidual2(kp_new2, x2_p.T, 'k-', ax[1])
+        # plotNumberedImagePoints(kp_new2[:,0:2].T, 'r',4, ax[1])
+        ax[2].imshow(img_old)
+        plotResidual2(kp_old, x3_p.T, 'k-', ax[2])
+        # plotNumberedImagePoints(kp_old[:,0:2].T, 'r',4, ax[2])
+        plt.show()
