@@ -202,9 +202,17 @@ if __name__ == '__main__':
 
     # K_old = K_old / K_old[2,2]
 
+    scale = 17.68
+
     K_old, R_c3_c1, t_c3_c1 = decomposeP(P_old/P_old[-1,-1])
+    # T_c3_c1 = ensamble_T(R_c3_c1, t_c3_c1 * scale)
     T_c3_c1 = ensamble_T(R_c3_c1, t_c3_c1)
     T_c1_c3 = np.linalg.inv(T_c3_c1)
+
+    # t_c2_c1 = T_c2_c1[0:3, 3].reshape(3,) * scale
+    # T_c2_c1 = ensamble_T(T_c2_c1[0:3, 0:3], t_c2_c1)
+
+    # points_3d = (T_w_c1 @ np.diag([scale,scale,scale,1])@ (points_3d).T).T
 
     fig = plt.figure()
     ax = plt.axes(projection='3d', adjustable='box')
