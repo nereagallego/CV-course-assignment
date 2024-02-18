@@ -14,15 +14,15 @@ from utils.plot import *
 
 if __name__ == '__main__':
     plot_flag = True
-    reconstruction_flag = False
-    differeces_flag = True
+    reconstruction_flag = True
+    differeces_flag = False
 
     Kc_new = np.loadtxt('calibration_matrix.txt')
 
 
     path_image_new_1 = 'imgs1/img_new1_undistorted.jpg'
     path_image_new_2 = 'imgs1/img_new3_undistorted.jpg'
-    path_image_old = 'imgs1/img_old.jpg'
+    path_image_old = 'imgs1/img_old2.jpg'
 
     img1 = cv2.imread(path_image_new_1)
     img2 = cv2.imread(path_image_new_2)
@@ -36,7 +36,7 @@ if __name__ == '__main__':
     npz = np.load(path)
     keypoints_SG_0_new = npz['keypoints0']
     keypoints_SG_1_new = npz['keypoints1']
-    path2 = './output/img_new1_undistorted_img_old_matches.npz'
+    path2 = './output/img_new1_undistorted_img_old2_matches.npz'
     npz2 = np.load(path2)
     keypoints_SG_0_old = npz2['keypoints0']
     keypoints_SG_1_old = npz2['keypoints1']
@@ -59,16 +59,19 @@ if __name__ == '__main__':
 
         keypoints_new_1, keypoints_new_2, keypoints_old = intersection(srcPts_SG, srcPts_SG_old, dstPts_SG, dstPts_SG_old)
 
-
-        F, matches = calculate_RANSAC_own_F(keypoints_new_1.T, keypoints_new_2.T, keypoints_old.T, 2, img1.shape[1], img1.shape[0], img2.shape[1], img2.shape[0])
+        # F, matches = calculate_RANSAC_own_F(keypoints_new_1.T, keypoints_new_2.T, keypoints_old.T, 1, img1.shape[1], img1.shape[0], img2.shape[1], img2.shape[0])
+        F, mask = cv2.findFundamentalMat(keypoints_new_1, keypoints_new_2, cv2.FM_RANSAC, 0.5, 0.99)
         # np.savetxt('F.txt', F)
         # np.savetxt('good_matches.txt', matches)
         # F = np.loadtxt('F.txt')
         # matches = np.loadtxt('good_matches.txt')
 
-        kp_new1 = matches[0:3,:].T
-        kp_new2 = matches[3:6,:].T
-        kp_old = matches[6:9,:].T
+
+        kp_new1 = keypoints_new_1[mask.ravel() == 1]
+        kp_new2 = keypoints_new_2[mask.ravel() == 1]
+        kp_old = keypoints_old[mask.ravel() == 1]
+
+        print('Number of matches after RANSAC: ', kp_new1.shape, kp_new2.shape, kp_old.shape)
 
         T_w_c1 = ensamble_T(np.diag((1, 1, 1)), np.zeros((3)))
 
@@ -198,23 +201,23 @@ if __name__ == '__main__':
             # plotNumberedImagePoints(kp_old[:,0:2].T, 'r',4, ax[2])
             plt.show()
 
-        M = P_old[0:3,0:3]
-        [K_old, R_c3_c1, t_c1_c3] = cv2.decomposeProjectionMatrix(np.sign(np.linalg.det(M)) * P_old/P_old[-1,-1])[:3]
+        # M = P_old[0:3,0:3]
+        # [K_old, R_c3_c1, t_c1_c3] = cv2.decomposeProjectionMatrix(np.sign(np.linalg.det(M)) * P_old/P_old[-1,-1])[:3]
 
-        t_c1_c3 = (t_c1_c3[:3] / t_c1_c3[3]).flatten()
-        R_c1_c3 = R_c3_c1.T
+        # t_c1_c3 = (t_c1_c3[:3] / t_c1_c3[3]).flatten()
+        # R_c1_c3 = R_c3_c1.T
 
-        T_c1_c3 = ensamble_T(R_c1_c3, t_c1_c3)
-        T_c3_c1 = np.linalg.inv(T_c1_c3)
+        # T_c1_c3 = ensamble_T(R_c1_c3, t_c1_c3)
+        # T_c3_c1 = np.linalg.inv(T_c1_c3)
 
-        K_old = K_old / K_old[2,2]
+        # K_old = K_old / K_old[2,2]
 
         scale = 17.68
 
-        # K_old, R_c3_c1, t_c3_c1 = decomposeP(P_old/P_old[-1,-1])
+        K_old, R_c3_c1, t_c3_c1 = decomposeP(P_old/P_old[-1,-1])
         # T_c3_c1 = ensamble_T(R_c3_c1, t_c3_c1 * scale)
-        # T_c3_c1 = ensamble_T(R_c3_c1, t_c3_c1)
-        # T_c1_c3 = np.linalg.inv(T_c3_c1)
+        T_c3_c1 = ensamble_T(R_c3_c1, t_c3_c1)
+        T_c1_c3 = np.linalg.inv(T_c3_c1)
 
         # t_c2_c1 = T_c2_c1[0:3, 3].reshape(3,) * scale
         # T_c2_c1 = ensamble_T(T_c2_c1[0:3, 0:3], t_c2_c1)
@@ -239,33 +242,31 @@ if __name__ == '__main__':
         # ax.plot(xFakeBoundingBox, yFakeBoundingBox, zFakeBoundingBox, 'w.')
         plt.show()
 
-        t_c3_c1 = T_c3_c1[0:3, 3].reshape(-1,1)    
+        t_c3_c1 = T_c3_c1[0:3, 3].reshape(-1,1)
 
-        elevation = np.arccos(t_c2_c1[2])
-        azimuth = np.arctan2(t_c2_c1[1], t_c2_c1[0])
+        r = np.linalg.norm(t_c3_c1)
+        theta = np.arctan2(t_c3_c1[1], t_c3_c1[0])
+        phi = np.arccos(t_c3_c1[2]/r)   
 
-        Op2 = [elevation , azimuth] + crossMatrixInv(sc.linalg.logm(R_c2_c1)) + [t_c3_c1[0], t_c3_c1[1], t_c3_c1[2]] + crossMatrixInv(sc.linalg.logm(R_c3_c1)) + K_old.flatten().tolist() + points_3d[:,0:3].flatten().tolist()
+        # elevation = np.arccos(t_c3_c1[2])
+        # azimuth = np.arctan2(t_c3_c1[1], t_c3_c1[0])
+
+        Op2 = [r, theta, phi] + crossMatrixInv(sc.linalg.logm(R_c3_c1)) + K_old.flatten().tolist() 
 
         X2 = np.stack((kp_new1[:,0:2], kp_new2[:,0:2], kp_old[:,0:2]))
-        OpOptim2 = scOptim.least_squares(resBundleProjection_n_cameras, Op2, args=(X2, 3, Kc_new , kp_new1.shape[0]),  method='trf', loss='huber', verbose=2, ftol=1e-6, xtol=1e-6, gtol=1e-6)
+        OpOptim2 = scOptim.least_squares(resBundleProjection_cameraOld, Op2, args=(X2, 3, Kc_new , kp_new1.shape[0], T_c2_c1, points_3d),  method='trf', loss='huber', verbose=2)
         OpOptim2 = OpOptim2.x
         np.savetxt('Optimization2.txt', OpOptim2)
 
-        R_c2_c1 = sc.linalg.expm(crossMatrix(OpOptim2[2:5]))
-        R_c2_c1 = sc.linalg.expm(crossMatrix(OpOptim2[2:5]))
-        t_c2_c1 = np.array([np.sin(OpOptim2[0])*np.cos(OpOptim2[1]), np.sin(OpOptim2[0])*np.sin(OpOptim2[1]), np.cos(OpOptim2[0])]).reshape(3,)
-        T_c2_c1_op = ensamble_T(R_c2_c1, t_c2_c1)
+        # R_c2_c1 = sc.linalg.expm(crossMatrix(OpOptim2[2:5]))
+        # R_c2_c1 = sc.linalg.expm(crossMatrix(OpOptim2[2:5]))
+        # t_c2_c1 = np.array([np.sin(OpOptim2[0])*np.cos(OpOptim2[1]), np.sin(OpOptim2[0])*np.sin(OpOptim2[1]), np.cos(OpOptim2[0])]).reshape(3,)
+        # T_c2_c1_op = ensamble_T(R_c2_c1, t_c2_c1)
 
-        R_c3_c1 = sc.linalg.expm(crossMatrix(OpOptim2[8:11]))
-        t_c3_c1 = np.array([OpOptim2[5],OpOptim2[6],OpOptim2[7]]).reshape(3,)
+        R_c3_c1 = sc.linalg.expm(crossMatrix(OpOptim2[3:6]))
+        t_c3_c1 = np.array([OpOptim2[0] * np.sin(OpOptim2[2]) * np.cos(OpOptim[1]), OpOptim2[0] * np.sin(OpOptim[2]) * np.sin(OpOptim2[1]), OpOptim2[0] * np.cos(OpOptim2[2])]).reshape(3,)
         T_c3_c1_op = ensamble_T(R_c3_c1, t_c3_c1)
-        Kc_old = np.array(OpOptim2[11:20]).reshape(3,3)
-
-        points_3D_Op = np.concatenate((OpOptim2[20: 20+3], np.array([1.0])), axis=0)
-
-        for i in range(X_3d.shape[0]-1):
-            points_3D_Op = np.vstack((points_3D_Op, np.concatenate((OpOptim2[20+3+3*i: 20+3+3*i+3], np.array([1.0])) ,axis=0)))
-
+        Kc_old = np.array(OpOptim2[6:]).reshape(3,3)
 
         #### Draw 3D ################
         fig3D = plt.figure(2)
@@ -275,9 +276,9 @@ if __name__ == '__main__':
         ax.set_zlabel('Z')
 
         drawRefSystem(ax, np.eye(4, 4), '-', 'C1')
-        drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c2_c1_op), '-', 'C2_BA')
+        drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c2_c1), '-', 'C2_BA')
         drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c3_c1_op), '-', 'C3_BA')
-        ax.scatter(points_3D_Op[:,0], points_3D_Op[:,1], points_3D_Op[:,2], marker='.')
+        ax.scatter(points_3d[:,0], points_3d[:,1], points_3d[:,2], marker='.')
         axisEqual3D(ax)
         # plotNumbered3DPoints(ax, points_3d.T, 'r', 0.1)
         # xFakeBoundingBox = np.linspace(0, 4, 2)
@@ -286,11 +287,11 @@ if __name__ == '__main__':
         # ax.plot(xFakeBoundingBox, yFakeBoundingBox, zFakeBoundingBox, 'w.')
         plt.show()
 
-        x1_p = P1 @ points_3D_Op.T
+        x1_p = P1 @ points_3d.T
         x1_p = x1_p / x1_p[2, :]
-        x2_p = P2 @ points_3D_Op.T
+        x2_p = (Kc_new @ T_c2_c1[:3,:]) @ points_3d.T
         x2_p = x2_p / x2_p[2, :]
-        x3_p = (Kc_old @ T_c3_c1[:3,:]) @ points_3D_Op.T
+        x3_p = (Kc_old @ T_c3_c1[:3,:]) @ points_3d.T
         x3_p = x3_p / x3_p[2,:]
 
         if plot_flag or True:

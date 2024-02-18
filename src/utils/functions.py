@@ -238,6 +238,7 @@ def resBundleProjection(Op, x1Data, x2Data, K_c, nPoints):
     res = np.hstack((res1, res2)).flatten()
 
     return np.array(res)
+    
 
 "the unknowns are the camera matrix parameters"
 "Each 2D-3D correspondence gives rise to two equations"
@@ -341,6 +342,71 @@ def resBundleProjection_n_cameras(Op, xData, nCameras, K_c, nPoints):
     # Xpoints = xData.reshape(nCameras, nPoints, 2)
     idx_3D = 20
     X_3D = np.hstack((Op[idx_3D:].reshape(-1, 3), np.ones((nPoints, 1))))
+    # print(X_3D)
+    res = []
+    for i in range(nCameras):
+        projection = theta_ext[i] @ X_3D.T
+        projection = projection[:2, :] / projection[2, :]
+        res.append((Xpoints[i] - projection.T).flatten())
+
+    # print(res)
+    return np.array(res).flatten()
+
+def resBundleProjection_cameraOld(Op, xData, nCameras, K_c, nPoints, T_c2_c1, X_3D):
+    """
+    -input:
+    Op: Optimization parameters: this must include a
+    paramtrization for T_21 (reference 1 seen from reference 2)
+    in a proper way and for X1 (3D points in ref 1)
+    x1Data: (3xnPoints) 2D points on image 1 (homogeneous
+    coordinates)
+    x2Data: (3xnPoints) 2D points on image 2 (homogeneous
+    coordinates)
+    K_c: (3x3) Intrinsic calibration matrix
+    nPoints: Number of points
+    -output:
+    res: residuals from the error between the 2D matched points
+    and the projected points from the 3D points
+    (2 equations/residuals per 2D point)
+
+    ASSUMING AT LEAST 3 CAMERAS !!!
+    """
+
+    '''
+    Op[0:1] -> theta, phi
+    Op[2:4] -> Rx,Ry,Rz
+    Op[5:7] -> tx, ty, tz (camera 3 in advance)
+    Op[8:10] -> Rx,Ry,Rz
+    Op[11:19] -> Kc_old
+    ...
+    Op[] -> 3DXx,3DXy,3DXz
+    '''
+    # Bundle adjustment using least squares function
+    idem = np.append(np.eye(3), np.zeros((3, 1)), axis=1)
+
+    theta_ext_1 = K_c @ idem
+
+
+    theta_ext = []
+    theta_ext.append(theta_ext_1)
+    theta_ext.append(K_c @ T_c2_c1[:3,:])
+
+    
+    t = np.array([Op[0] * np.sin(Op[2]) * np.cos(Op[1]), Op[0] * np.sin(Op[1]) * np.sin(Op[2]), Op[0] * np.cos(Op[2])]).reshape(3,)
+    R = sc.linalg.expm(crossMatrix(Op[3:6]))
+
+    T = ensamble_T(R, t)
+
+    K = Op[6:].reshape(3,3)
+    theta_ext.append(K @ T[:3,:])
+
+
+    # Compute the residuals
+   
+    Xpoints = xData
+    # Xpoints = xData.reshape(nCameras, nPoints, 2)
+    idx_3D = 20
+    # X_3D = np.hstack((Op[idx_3D:].reshape(-1, 3), np.ones((nPoints, 1))))
     # print(X_3D)
     res = []
     for i in range(nCameras):

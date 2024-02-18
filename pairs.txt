@@ -1,3 +1,5 @@
 img_new1_undistorted.jpg img_old.jpg
-img_new1_undistorted.jpg img_new3.undistorted.jpg
+img_new1_undistorted.jpg img_new3_undistorted.jpg
 img_new3_undistorted.jpg img_old.jpg
+img_new2_undistorted.jpg img_old.jpg
+img_new2_undistorted.jpg img_new3_undistorted.jpg
