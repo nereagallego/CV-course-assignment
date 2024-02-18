@@ -69,3 +69,15 @@ def plotNumberedImagePoints(x,strColor,offset, ax):
          """
     for k in range(x.shape[1]):
         ax.text(x[0, k]+offset, x[1, k]+offset, str(k), color=strColor)
+
+def axisEqual3D(ax):
+    ''' Set axis equal in 3d plot '''
+    extents = np.array([getattr(ax, 'get_{}lim'.format(dim))()
+                        for dim in 'xyz'])
+    sz = extents[:, 1] - extents[:, 0]
+    centers = np.mean(extents, axis=1)
+    maxsize = max(abs(sz))
+    r = maxsize/2
+    for ctr, dim in zip(centers, 'xyz'):
+        getattr(ax, 'set_{}lim'.format(dim))(ctr - r, ctr + r)
+    ax.set_box_aspect((4,4,4))

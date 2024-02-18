@@ -2,11 +2,12 @@ import numpy as np
 import scipy as sc
 import cv2
 
+# Ensamble T matrix
 def ensamble_T(R_w_c, t_w_c) -> np.array:
     """
     Ensamble the a SE(3) matrix with the rotation matrix and translation vector.
     """
-    T_w_c = np.zeros((4, 4))
+    T_w_c = np.zeros((4, 4), dtype=np.float32)
     T_w_c[0:3, 0:3] = R_w_c
     T_w_c[0:3, 3] = t_w_c
     T_w_c[3, 3] = 1
@@ -349,3 +350,31 @@ def resBundleProjection_n_cameras(Op, xData, nCameras, K_c, nPoints):
 
     # print(res)
     return np.array(res).flatten()
+
+def show_image_differences(image1_path, image2_path):
+    # Load images
+    image1 = cv2.imread(image1_path)
+    image2 = cv2.imread(image2_path)
+
+    # Convert images to grayscale
+    gray1 = cv2.cvtColor(image1, cv2.COLOR_BGR2GRAY)
+    gray2 = cv2.cvtColor(image2, cv2.COLOR_BGR2GRAY)
+
+    # Compute absolute difference between the two images
+    diff = cv2.absdiff(gray1, gray2)
+
+    # Threshold the difference image
+    _, thresh = cv2.threshold(diff, 30, 255, cv2.THRESH_BINARY)
+
+    # Find contours
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Draw contours on the original images
+    result = cv2.drawContours(image1, contours, -1, (0, 0, 255), 2)
+    result = cv2.drawContours(image2, contours, -1, (0, 0, 255), 2)
+
+    # Display the result
+    cv2.imshow("Image 1", image1)
+    cv2.imshow("Image 2", image2)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
