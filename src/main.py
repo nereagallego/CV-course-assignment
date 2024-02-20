@@ -187,7 +187,7 @@ if __name__ == '__main__':
         x3_p = x3_p / x3_p[2,:]
 
         if plot_flag:
-            fig, ax = plt.subplots(1,3, figsize=(10,5))
+            fig, ax = plt.subplots(1,3, figsize=(15,5))
             ax[0].imshow(img1)
             ax[0].set_title('Residuals after Bundle adjustment Image1')
             plotResidual2(kp_new1, x1_p.T, 'k-', ax[0])
@@ -212,7 +212,7 @@ if __name__ == '__main__':
 
         # K_old = K_old / K_old[2,2]
 
-        scale = 17.68
+        
 
         K_old, R_c3_c1, t_c3_c1 = decomposeP(P_old/P_old[-1,-1])
         # T_c3_c1 = ensamble_T(R_c3_c1, t_c3_c1 * scale)
@@ -251,7 +251,7 @@ if __name__ == '__main__':
         # elevation = np.arccos(t_c3_c1[2])
         # azimuth = np.arctan2(t_c3_c1[1], t_c3_c1[0])
 
-        Op2 = [r, theta, phi] + crossMatrixInv(sc.linalg.logm(R_c3_c1)) + K_old.flatten().tolist() 
+        Op2 = [r, theta, phi] + crossMatrixInv(sc.linalg.logm(R_c3_c1)) + K_old.flatten().tolist()
 
         X2 = np.stack((kp_new1[:,0:2], kp_new2[:,0:2], kp_old[:,0:2]))
         OpOptim2 = scOptim.least_squares(resBundleProjection_cameraOld, Op2, args=(X2, 3, Kc_new , kp_new1.shape[0], T_c2_c1, points_3d),  method='trf', loss='huber', verbose=2)
@@ -268,6 +268,11 @@ if __name__ == '__main__':
         T_c3_c1_op = ensamble_T(R_c3_c1, t_c3_c1)
         Kc_old = np.array(OpOptim2[6:]).reshape(3,3)
 
+        scale = 17.68 / np.linalg.norm(t_c2_c1)
+        T_c2_c1 = ensamble_T(R_c2_c1, t_c2_c1 * scale)
+        T_c3_c1_op = ensamble_T(R_c3_c1, t_c3_c1 * scale)
+        points_3d = (T_w_c1 @ np.diag([scale,scale,scale,1])@ (points_3d).T).T
+
         #### Draw 3D ################
         fig3D = plt.figure(2)
         ax = plt.axes(projection='3d', adjustable='box')
@@ -277,38 +282,10 @@ if __name__ == '__main__':
 
         drawRefSystem(ax, np.eye(4, 4), '-', 'C1')
         drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c2_c1), '-', 'C2_BA')
-        drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c3_c1_op), '-', 'C3_BA')
+        drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c3_c1_op), '-', 'Cold_BA')
         ax.scatter(points_3d[:,0], points_3d[:,1], points_3d[:,2], marker='.')
         axisEqual3D(ax)
-        # plotNumbered3DPoints(ax, points_3d.T, 'r', 0.1)
-        # xFakeBoundingBox = np.linspace(0, 4, 2)
-        # yFakeBoundingBox = np.linspace(0, 4, 2)
-        # zFakeBoundingBox = np.linspace(0, 4, 2)
-        # ax.plot(xFakeBoundingBox, yFakeBoundingBox, zFakeBoundingBox, 'w.')
         plt.show()
-
-        x1_p = P1 @ points_3d.T
-        x1_p = x1_p / x1_p[2, :]
-        x2_p = (Kc_new @ T_c2_c1[:3,:]) @ points_3d.T
-        x2_p = x2_p / x2_p[2, :]
-        x3_p = (Kc_old @ T_c3_c1[:3,:]) @ points_3d.T
-        x3_p = x3_p / x3_p[2,:]
-
-        if plot_flag or True:
-            fig, ax = plt.subplots(1,3, figsize=(10,5))
-            ax[0].imshow(img1)
-            ax[0].set_title('Residuals after Bundle adjustment Image1')
-            plotResidual2(kp_new1, x1_p.T, 'k-', ax[0])
-            # plotNumberedImagePoints(kp_new1[:,0:2].T, 'r',4, ax[0])
-            ax[1].imshow(img2)
-            ax[1].set_title('Residuals after Bundle adjustment Image2')
-            plotResidual2(kp_new2, x2_p.T, 'k-', ax[1])
-            # plotNumberedImagePoints(kp_new2[:,0:2].T, 'r',4, ax[1])
-            ax[2].imshow(img_old)
-            plotResidual2(kp_old, x3_p.T, 'k-', ax[2])
-            # plotNumberedImagePoints(kp_old[:,0:2].T, 'r',4, ax[2])
-            plt.show()
-
 
     #################################################################################
     #    PART 2
