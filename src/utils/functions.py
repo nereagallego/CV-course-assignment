@@ -237,8 +237,7 @@ def resBundleProjection(Op, x1Data, x2Data, K_c, nPoints):
 
     res = np.hstack((res1, res2)).flatten()
 
-    return np.array(res)
-    
+    return np.array(res)    
 
 "the unknowns are the camera matrix parameters"
 "Each 2D-3D correspondence gives rise to two equations"
@@ -352,7 +351,7 @@ def resBundleProjection_n_cameras(Op, xData, nCameras, K_c, nPoints):
     # print(res)
     return np.array(res).flatten()
 
-def resBundleProjection_cameraOld(Op, xData, nCameras, K_c, nPoints, T_c2_c1, X_3D):
+def resBundleProjection_cameraOld(Op, xData, nCameras, K_c, nPoints, T_c2_c1, X_3D, K):
     """
     -input:
     Op: Optimization parameters: this must include a
@@ -392,12 +391,12 @@ def resBundleProjection_cameraOld(Op, xData, nCameras, K_c, nPoints, T_c2_c1, X_
     theta_ext.append(K_c @ T_c2_c1[:3,:])
 
     
-    t = np.array([Op[0] * np.sin(Op[2]) * np.cos(Op[1]), Op[0] * np.sin(Op[1]) * np.sin(Op[2]), Op[0] * np.cos(Op[2])]).reshape(3,)
+    t = np.array([Op[0] * np.sin(Op[1]) * np.cos(Op[2]), Op[0] * np.sin(Op[1]) * np.sin(Op[2]), Op[0] * np.cos(Op[1])]).reshape(3,)
     R = sc.linalg.expm(crossMatrix(Op[3:6]))
 
     T = ensamble_T(R, t)
 
-    K = Op[6:].reshape(3,3)
+    # K = Op[6:].reshape(3,3)
     theta_ext.append(K @ T[:3,:])
 
 
@@ -413,6 +412,8 @@ def resBundleProjection_cameraOld(Op, xData, nCameras, K_c, nPoints, T_c2_c1, X_
         projection = theta_ext[i] @ X_3D.T
         projection = projection[:2, :] / projection[2, :]
         res.append((Xpoints[i] - projection.T).flatten())
+        if i == 2:
+            print(sum((Xpoints[i] - projection.T).flatten()))
 
     # print(res)
     return np.array(res).flatten()
