@@ -21,7 +21,7 @@ if __name__ == '__main__':
 
 
     path_image_new_1 = 'imgs1/img_new1_undistorted.jpg'
-    path_image_new_2 = 'imgs1/img_new2_undistorted.jpg'
+    path_image_new_2 = 'imgs1/img_new3_undistorted.jpg'
     path_image_old = 'imgs1/img_old2.jpg'
 
     img1 = cv2.imread(path_image_new_1)
@@ -32,7 +32,7 @@ if __name__ == '__main__':
     img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2RGB)
     img_old = cv2.cvtColor(img_old, cv2.COLOR_BGR2RGB)
 
-    path = './output/img_new1_undistorted_img_new2_undistorted_matches.npz'
+    path = './output/img_new1_undistorted_img_new3_undistorted_matches.npz'
     npz = np.load(path)
     keypoints_SG_0_new = npz['keypoints0']
     keypoints_SG_1_new = npz['keypoints1']
@@ -310,8 +310,8 @@ if __name__ == '__main__':
         ax.set_zlabel('Z')
 
         drawRefSystem(ax, np.eye(4, 4), '-', 'C1')
-        drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c2_c1), '-', 'C2_BA')
-        drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c3_c1_op), '-', 'Cold_BA')
+        drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c2_c1), '-', 'C2')
+        drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c3_c1_op), '-', 'Cold')
         ax.scatter(points_3d[:,0], points_3d[:,1], points_3d[:,2], marker='.')
         axisEqual3D(ax)
         plt.show()
@@ -323,9 +323,15 @@ if __name__ == '__main__':
         x3_p = (K_old @ T_c3_c1_op[:3,:]) @ points_3d.T
         x3_p = x3_p / x3_p[2,:]
 
+        res = 0
+        res += sum(sum(abs(kp_new1 - (x1_p[:2,:] / x1_p[2,:]).T)))
+        res += sum(sum(abs(kp_new2 - (x2_p[:2,:] / x2_p[2,:]).T)))
+        res += sum(sum(abs(kp_old - (x3_p[:2,:] / x3_p[2,:]).T)))
+        print('Residuals after optimization: ', res/(3*kp_new1.shape[0]))
+
         if plot_flag or True:
             fig, ax = plt.subplots(1,3, figsize=(10,4))
-            fig.suptitle('Residuals before Bundle adjustment')
+            fig.suptitle('Residuals after Bundle adjustment')
             ax[0].imshow(img1)
             # ax[0].set_title('Residuals before Bundle adjustment')
             plotResidual2(kp_new1, x1_p.T, 'k-', ax[0])
