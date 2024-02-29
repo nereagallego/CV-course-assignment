@@ -13,7 +13,7 @@ from utils.functions import *
 from utils.plot import *
 
 if __name__ == '__main__':
-    plot_flag = False
+    plot_flag = True
     reconstruction_flag = True
     differeces_flag = False
 
@@ -58,6 +58,7 @@ if __name__ == '__main__':
         
 
         keypoints_new_1, keypoints_new_2, keypoints_old = intersection(srcPts_SG, srcPts_SG_old, dstPts_SG, dstPts_SG_old)
+        print('Number of matches after intersection: ', keypoints_new_1.shape, keypoints_new_2.shape, keypoints_old.shape)
 
         # F, matches = calculate_RANSAC_own_F(keypoints_new_1.T, keypoints_new_2.T, keypoints_old.T, 1, img1.shape[1], img1.shape[0], img2.shape[1], img2.shape[0])
         F, mask = cv2.findFundamentalMat(keypoints_new_1, keypoints_new_2, cv2.FM_RANSAC, 0.5, 0.99)
@@ -224,24 +225,19 @@ if __name__ == '__main__':
         # T_c2_c1 = ensamble_T(T_c2_c1[0:3, 0:3], t_c2_c1)
 
         # points_3d = (T_w_c1 @ np.diag([scale,scale,scale,1])@ (points_3d).T).T
+        if plot_flag:
+            fig = plt.figure()
+            ax = plt.axes(projection='3d', adjustable='box')
+            ax.set_xlabel('X')
+            ax.set_ylabel('Y')
+            ax.set_zlabel('Z')
 
-        fig = plt.figure()
-        ax = plt.axes(projection='3d', adjustable='box')
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
-
-        drawRefSystem(ax, T_w_c1, '-', 'C1')
-        drawRefSystem(ax, T_w_c1 @ np.linalg.inv(T_c2_c1) , '-', 'C2')
-        drawRefSystem(ax, T_w_c1 @ T_c1_c3 , '-', 'C old')
-        ax.scatter(points_3d[:,0], points_3d[:,1], points_3d[:,2], marker='.')
-        axisEqual3D(ax)
-        # plotNumbered3DPoints(ax, points_3d.T, 'r', 0.1)
-        # xFakeBoundingBox = np.linspace(0, 4, 2)
-        # yFakeBoundingBox = np.linspace(0, 4, 2)
-        # zFakeBoundingBox = np.linspace(0, 4, 2)
-        # ax.plot(xFakeBoundingBox, yFakeBoundingBox, zFakeBoundingBox, 'w.')
-        plt.show()
+            drawRefSystem(ax, T_w_c1, '-', 'C1')
+            drawRefSystem(ax, T_w_c1 @ np.linalg.inv(T_c2_c1) , '-', 'C2')
+            drawRefSystem(ax, T_w_c1 @ T_c1_c3 , '-', 'C old')
+            ax.scatter(points_3d[:,0], points_3d[:,1], points_3d[:,2], marker='.')
+            axisEqual3D(ax)
+            plt.show()
 
         t_c3_c1 = T_c3_c1[0:3, 3].reshape(3,)
 
@@ -308,12 +304,17 @@ if __name__ == '__main__':
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
         ax.set_zlabel('Z')
+        # ax.set_xlim([-100, 100])
+        # ax.set_ylim([-100, 100])
+        # ax.set_zlim([-75, 100])
+        ax.view_init(0, -90)
 
         drawRefSystem(ax, np.eye(4, 4), '-', 'C1')
         drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c2_c1), '-', 'C2')
         drawRefSystem(ax, np.eye(4,4) @ np.linalg.inv(T_c3_c1_op), '-', 'Cold')
         ax.scatter(points_3d[:,0], points_3d[:,1], points_3d[:,2], marker='.')
         axisEqual3D(ax)
+        
         plt.show()
 
         x1_p = P1 @ points_3d.T
@@ -331,7 +332,7 @@ if __name__ == '__main__':
 
         if plot_flag or True:
             fig, ax = plt.subplots(1,3, figsize=(10,4))
-            fig.suptitle('Residuals after Bundle adjustment')
+            # fig.suptitle('Residuals')
             ax[0].imshow(img1)
             # ax[0].set_title('Residuals before Bundle adjustment')
             plotResidual2(kp_new1, x1_p.T, 'k-', ax[0])
