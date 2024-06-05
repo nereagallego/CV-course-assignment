@@ -36,11 +36,13 @@ if __name__ == '__main__':
     #cv.namedWindow('img', cv.WINDOW_NORMAL)  # Create window with freedom of dimensions
     #cv.resizeWindow('img', 800, 600)
     for fname in images:
+        file_name = fname.split('.')
         img = cv.imread('calibration/'+fname)
         img_rows = img.shape[1]
         img_cols = img.shape[0]
         new_img_size = (int(img_rows / image_downsize_factor), int(img_cols / image_downsize_factor))
         img = cv.resize(img, new_img_size, interpolation = cv.INTER_CUBIC)
+        cv.imwrite('calibration/'+file_name[0]+'_resized.jpg', img)
         gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
 
         
@@ -56,6 +58,7 @@ if __name__ == '__main__':
             cv.drawChessboardCorners(img, pattern_size, corners2, ret)
             cv.imshow('img', img)
             cv.waitKey(500)
+            cv.imwrite('calibration/'+file_name[0]+'_corners.jpg', img)
     # See PyCharm help at https://www.jetbrains.com/help/pycharm/
 
     #initial_distortion = np.zeros((1, 5))
