@@ -162,14 +162,18 @@ def sfm(F, K_c, x1, x2, x3):
     X = []
     max = 0
     best = None
+    best_mask = None
     for T in Ts:
+        mask = np.zeros(x1.shape[1], dtype=bool)
         P = K_c @ T
         x_3d = triangulation(P1, P, x1, x2)
         points_front = []
         for i in range(x_3d.shape[1]):
             if x_3d[2,i] > 0  and np.dot(T[2, 0:3], x_3d[:3,i] - T[0:3, 3]) > 0:
-                points_front.append(x_3d[:,i])
-        if len(points_front) > max:
+                mask[i] = True
+            points_front.append(x_3d[:,i])
+        if sum(mask) > max:
+            best_mask = mask
             max = len(points_front)
             best = T
             X = x_3d.T
@@ -179,7 +183,7 @@ def sfm(F, K_c, x1, x2, x3):
         print("No solution found")
         return None, None
     
-    return ensamble_T(best[0:3, 0:3], best[0:3, 3]), X
+    return ensamble_T(best[0:3, 0:3], best[0:3, 3]), X, best_mask
 
 
 def crossMatrixInv(M):

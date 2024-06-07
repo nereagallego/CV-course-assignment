@@ -18,11 +18,176 @@ if __name__ == '__main__':
     reconstruction_flag = True
     differeces_flag = False
 
-    Kc = np.loadtxt('calibration_matrix.txt')
+    Kc = np.loadtxt('Kc.txt')
 
     # Load images
-    img1 = cv2.imread('imgs/img_new1.jpg')
-    img2 = cv2.imread('imgs/img_new2.jpg')
-    img3 = cv2.imread('imgs/img_new3.jpg')
-    img4 = cv2.imread('imgs/img_new4.jpg')
-    img_old = cv2.imread('imgs/img_old.jpg')
+    path_folder = 'imgs/'
+    path_img1 = os.path.join(path_folder, 'img_new1_undistorted.jpg')
+    path_img2 = os.path.join(path_folder, 'img_new2_undistorted.jpg')
+    path_img3 = os.path.join(path_folder, 'img_new3_undistorted.jpg')
+    path_img4 = os.path.join(path_folder, 'img_new4_undistorted.jpg')
+    path_old = os.path.join(path_folder, 'img_old.jpg')
+
+    img1 = cv2.imread(path_img1)
+    img2 = cv2.imread(path_img2)
+    img3 = cv2.imread(path_img3)
+    img4 = cv2.imread(path_img4)
+    img_old = cv2.imread(path_old)
+
+    img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
+    img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2RGB)
+    img3 = cv2.cvtColor(img3, cv2.COLOR_BGR2RGB)
+    img4 = cv2.cvtColor(img4, cv2.COLOR_BGR2RGB)
+    img_old = cv2.cvtColor(img_old, cv2.COLOR_BGR2RGB)
+
+
+    # Load matches
+    path = './output/img_new1_undistorted_img_new2_undistorted_matches.npz'
+    npz_c1_c2 = np.load(path)
+    path = './output/img_new1_undistorted_img_new3_undistorted_matches.npz'
+    npz_c1_c3 = np.load(path)
+    path = './output/img_new1_undistorted_img_new4_undistorted_matches.npz'
+    npz_c1_c4 = np.load(path)
+    path = './output/img_new1_undistorted_img_old_matches.npz'
+    npz_c1_old = np.load(path)
+
+    # Get matches
+    kp_c1_c1c2_ = npz_c1_c2['keypoints0']
+    kp_c2_c1c2_ = npz_c1_c2['keypoints1']
+    kp_c1_c1c3_ = npz_c1_c3['keypoints0']
+    kp_c3_c1c3_ = npz_c1_c3['keypoints1']
+    kp_c1_c1c4_ = npz_c1_c4['keypoints0']
+    kp_c4_c1c4_ = npz_c1_c4['keypoints1']
+    kp_c1_c1old_ = npz_c1_old['keypoints0']
+    kp_old_c1old_ = npz_c1_old['keypoints1']
+
+    kp_c1_c1c2 = np.float32([kp_c1_c1c2_[i] for i,x in enumerate(npz_c1_c2['matches']) if x != -1])
+    kp_c2_c1c2 = np.float32([kp_c2_c1c2_[x] for i,x in enumerate(npz_c1_c2['matches']) if x != -1])
+    kp_c1_c1c3 = np.float32([kp_c1_c1c3_[i] for i,x in enumerate(npz_c1_c3['matches']) if x != -1])
+    kp_c3_c1c3 = np.float32([kp_c3_c1c3_[x] for i,x in enumerate(npz_c1_c3['matches']) if x != -1])
+    kp_c1_c1c4 = np.float32([kp_c1_c1c4_[i] for i,x in enumerate(npz_c1_c4['matches']) if x != -1])
+    kp_c4_c1c4 = np.float32([kp_c4_c1c4_[x] for i,x in enumerate(npz_c1_c4['matches']) if x != -1])
+    kp_c1_c1old = np.float32([kp_c1_c1old_[i] for i,x in enumerate(npz_c1_old['matches']) if x != -1])
+    kp_old_c1old = np.float32([kp_old_c1old_[x] for i,x in enumerate(npz_c1_old['matches']) if x != -1])
+
+    kp_c1, kp_c3, kp_old = intersection(kp_c1_c1c3, kp_c1_c1old, kp_c3_c1c3, kp_old_c1old)
+    print('Number of matches after intersection: ', kp_c1.shape[0], kp_c3.shape[0], kp_old.shape[0])
+
+    F, mask = cv2.findFundamentalMat(kp_c1, kp_c3, cv2.FM_RANSAC, 0.5, 0.99)
+
+    kp_c1 = kp_c1[mask.ravel() == 1]
+    kp_c3 = kp_c3[mask.ravel() == 1]
+    kp_old = kp_old[mask.ravel() == 1]
+
+    print('Number of matches after RANSAC: ', kp_c1.shape[0], kp_c3.shape[0], kp_old.shape[0])
+
+    T_w_c1 = ensamble_T(np.diag((1,1,1)), np.array([0,0,0]))
+
+    T_c3_c1, X3d, mask = sfm(F, Kc, kp_c1[:, :2].T, kp_c3[:, :2].T, kp_old[:, :2].T)
+
+    if plot_flag: 
+        # Plot 3D points
+        fig = plt.figure()
+        ax = plt.axes(projection='3d', adjustable='box')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+
+        drawRefSystem(ax, T_w_c1, '-', 'C1')
+        T_w_c3 = T_w_c1 @ np.linalg.inv(T_c3_c1)
+        drawRefSystem(ax, T_w_c3, '-', 'C3')
+        ax.scatter(X3d[mask,0], X3d[mask,1], X3d[mask,2], c='r', marker='.')
+        axisEqual3D(ax)
+        plt.show()
+
+    idem = np.hstack((np.identity(3), np.zeros(3).reshape(3,1)))
+    aux = Kc @ idem
+    P3 = aux @ T_c3_c1
+
+    P1 = aux @ T_w_c1
+
+    x1 = P1 @ X3d[mask].T
+    x1 = x1 / x1[2,:]  
+    x3 = P3 @ X3d[mask].T
+    x3 = x3 / x3[2,:]
+
+    if plot_flag:
+
+        fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+        ax[0].imshow(img1, cmap='gray', vmin=0, vmax=255)
+        ax[0].set_title('Residuals before BA')
+        plotResidual2(kp_c1[mask], x1.T, 'k-', ax[0])
+
+        ax[1].imshow(img3, cmap='gray', vmin=0, vmax=255)
+        ax[1].set_title('Residuals before BA')
+        plotResidual2(kp_c3[mask], x3.T, 'k-', ax[1])
+        plt.show()
+
+        res = 0
+        res += sum(sum(abs(kp_c1[mask] - x1[:2].T)))
+        res += sum(sum(abs(kp_c3[mask] - x3[:2].T)))
+        print('Total residuals before BA: ', res/(2*len(kp_c1[mask])))
+
+    R = T_c3_c1[:3,:3]
+    t = T_c3_c1[:3,3].reshape(3,1)
+
+    elevation = np.arccos(t[2])
+    azimuth = np.arctan2(t[1], t[0])
+
+    print(crossMatrixInv(sc.linalg.logm(R)))
+
+    Op = [elevation, azimuth] + crossMatrixInv(sc.linalg.logm(R)) + X3d[mask,:3].flatten().tolist()
+
+    OpOptim = scOptim.least_squares(resBundleProjection, Op, args=(kp_c1[mask].T, kp_c3[mask].T, Kc, kp_c1.shape[0]), method='trf', loss='huber', verbose=2)
+
+    OpOptim = OpOptim.x
+
+    R_c3_c1 = sc.linalg.expm(crossMatrix(OpOptim[2:5]))
+    t_c1_c1 = np.array([np.sin(OpOptim[0])*np.cos(OpOptim[1]), np.sin(OpOptim[0])*np.sin(OpOptim[1]), np.cos(OpOptim[0])])
+    T_c3_c1 = ensamble_T(R_c3_c1, t_c1_c1)
+    X3d_optim = np.concatenate((OpOptim[5:8], np.array([1.0])), axis=0)
+    for i in range(X3d.shape[0]-1):
+        X3d_optim = np.vstack((X3d_optim, np.concatenate((OpOptim[8+3*i:11+3*i], np.array([1.0])), axis=0)))
+
+    if plot_flag:
+        fig = plt.figure()
+        ax = plt.axes(projection='3d', adjustable='box')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+
+        drawRefSystem(ax, T_w_c1, '-', 'C1')
+        T_w_c3 = T_w_c1 @ np.linalg.inv(T_c3_c1)
+        drawRefSystem(ax, T_w_c3, '-', 'C3')
+        ax.scatter(X3d_optim[:,0], X3d_optim[:,1], X3d_optim[:,2], c='r', marker='.')
+        axisEqual3D(ax)
+        plt.show()
+
+    P3 = aux @ T_c3_c1
+
+    x1 = P1 @ X3d_optim.T
+    x1 = x1 / x1[2,:]
+    x3 = P3 @ X3d_optim.T
+    x3 = x3 / x3[2,:]
+
+
+    if plot_flag:
+        fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+        ax[0].imshow(img1, cmap='gray', vmin=0, vmax=255)
+        ax[0].set_title('Residuals after BA')
+        plotResidual2(kp_c1[mask], x1.T, 'k-', ax[0])
+
+        ax[1].imshow(img3, cmap='gray', vmin=0, vmax=255)
+        ax[1].set_title('Residuals after BA')
+        plotResidual2(kp_c3[mask], x3.T, 'k-', ax[1])
+        plt.show()
+
+        res = 0
+        res += sum(sum(abs(kp_c1[mask] - x1[:2].T)))
+        res += sum(sum(abs(kp_c3[mask] - x3[:2].T)))
+        print('Total residuals before BA: ', res/(2*len(kp_c1[mask])))
+
+
+
+
+    
