@@ -187,6 +187,53 @@ if __name__ == '__main__':
         res += sum(sum(abs(kp_c3[mask] - x3[:2].T)))
         print('Total residuals before BA: ', res/(2*len(kp_c1[mask])))
 
+    Pold = DLTcamera(kp_old[mask], X3d_optim)
+
+    xold = Pold @ X3d_optim.T
+    xold = xold / xold[2,:]
+
+    if plot_flag:
+        fig, ax = plt.subplots(1, 3, figsize=(15, 5))
+        ax[0].imshow(img1)
+        ax[0].set_title('Residuals C1')
+        plotResidual2(kp_c1[mask], x1.T, 'k-', ax[0])
+
+        ax[1].imshow(img3)
+        ax[1].set_title('Residuals C3')
+        plotResidual2(kp_c3[mask], x3.T, 'k-', ax[1])
+
+        ax[2].imshow(img_old)
+        ax[2].set_title('Residuals Old')
+        plotResidual2(kp_old[mask], xold.T, 'k-', ax[2])
+
+        plt.show()
+
+        res = 0
+        res += sum(sum(abs(kp_c1[mask] - x1[:2].T)))
+        res += sum(sum(abs(kp_c3[mask] - x3[:2].T)))
+        res += sum(sum(abs(kp_old[mask] - xold[:2].T)))
+        print('Total residuals before BA: ', res/(3*len(kp_c1[mask])))
+
+    Kold, R_cold_c1, t_cold_c1 = decomposeP(Pold/Pold[-1,-1])
+    T_cold_c1 = ensamble_T(R_cold_c1, t_cold_c1)
+    T_c1_cold = np.linalg.inv(T_cold_c1)
+
+    if plot_flag:
+        fig = plt.figure()
+        ax = plt.axes(projection='3d', adjustable='box')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+
+        drawRefSystem(ax, T_w_c1, '-', 'C1')
+        T_w_c3 = T_w_c1 @ np.linalg.inv(T_c3_c1)
+        drawRefSystem(ax, T_w_c3, '-', 'C3')
+        T_w_old = T_w_c1 @ T_c1_cold
+        drawRefSystem(ax, T_w_old, '-', 'Old')
+        ax.scatter(X3d_optim[:,0], X3d_optim[:,1], X3d_optim[:,2], c='r', marker='.')
+        axisEqual3D(ax)
+        plt.show()
+
 
 
 
