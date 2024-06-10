@@ -1,6 +1,7 @@
 import numpy as np
 import scipy as sc
 import cv2
+import scipy.optimize as scOptim
 
 # Ensamble T matrix
 def ensamble_T(R_w_c, t_w_c) -> np.array:
@@ -243,32 +244,29 @@ def resBundleProjection(Op, x1Data, x2Data, K_c, nPoints):
 
     return np.array(res)    
 
+def DLT_equation(point2d, point3d):
+    X, Y, Z, W = point3d
+    x, y = point2d
+
+    return np.array([
+        [-X, -Y, -Z, -W,  0,  0,  0,  0, x * X, x * Y, x * Z, x * W],
+        [ 0,  0,  0,  0, -X, -Y, -Z, -W, y * X, y * Y, y * Z, y * W]
+    ])
+
 "the unknowns are the camera matrix parameters"
 "Each 2D-3D correspondence gives rise to two equations"
-def DLTcamera(matches, x_3d):
-    A = np.empty((0, 12))                               # DLT, diapo 13 tema 6
-    for i in range(x_3d.shape[0]):   
-        A = np.vstack((
-            A,
-            np.concatenate((-x_3d[i,:], np.zeros((4)), matches[i,0]*x_3d[i,:])),
-            np.concatenate((np.zeros((4)), -x_3d[i,:], matches[i,1]*x_3d[i,:])),
-        ))
-    u, s, vh = np.linalg.svd(A)
-    P3 = np.reshape(vh[-1, :], (3,4))
-    return P3
-    # A = np.zeros((2*len(matches), 12))
+def DLTcamera(kp_old, x3d):
+    # create equations
+    DLT_eq_mat = np.concatenate(
+        [ DLT_equation(kp_old[i], x3d[i]) for i in range(x3d.shape[0]) ], 
+        axis = 0)
+    
+    U, S, V = np.linalg.svd(DLT_eq_mat)
+    P = V[-1].reshape(3, 4)
 
-    # for i in range(len(matches)):
-    #     A[2*i,:] = np.array([-x_3d[i,0], -x_3d[i,1], -x_3d[i,2], -x_3d[i,3], 0, 0, 0, 0, matches[i][0]*x_3d[i,0], matches[i][0]*x_3d[i,1], matches[i][0]*x_3d[i,2], matches[i][0] * x_3d[i,3]])
-    #     A[2*i+1,:] = np.array([0, 0, 0, 0, -x_3d[i,0], -x_3d[i,1], -x_3d[i,2], -x_3d[i,3], matches[i][1]*x_3d[i,0], matches[i][1]*x_3d[i,1], matches[i][1]*x_3d[i,2], matches[i][1] * x_3d[i,3]])
-
-    # _, _, V = np.linalg.svd(A)
-    # P = V[-1,:].reshape((3,4))
-
-    # # Normalize P
-    # P /= P[2,3]
-
-    # return P
+    # decompose matrix
+    return P
+   
 
 def decomposeP(P):
     M = P[:,:3]
@@ -280,8 +278,7 @@ def decomposeP(P):
     t = t[:3] / t[3]
 
     Tinv = ensamble_T(R, t)
-    T = np.linalg.inv(Tinv)
-
+    T = Tinv
     return K, T[0:3, 0:3], T[0:3, 3]
     
 def resBundleProjection_n_cameras(Op, xData, nCameras, K_c, nPoints):
@@ -449,3 +446,21 @@ def show_image_differences(image1_path, image2_path):
     cv2.imshow("Image 2", image2)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+
+def refinePoseOldCamera(x3d, kp, P):
+    """
+    Refine the pose of the old camera given the 3D points and the 2D points.
+    """
+    # Create the initial guess
+    Op = P.flatten()
+    OpOptim = scOptim.least_squares(resBundlePoseRefinement, Op, args=(x3d, kp), method='trf', jac='2-point', loss='huber', verbose=2)
+
+    P = OpOptim.x.reshape(3, 4)
+    return P
+
+def resBundlePoseRefinement(Op, x3d, x2d):
+    P = Op.reshape(3, 4)
+    projection = P @ x3d.T
+    projection = projection[:2, :] / projection[2, :]
+
+    return (x2d - projection.T).flatten()

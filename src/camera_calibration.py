@@ -83,9 +83,9 @@ if __name__ == '__main__':
 
     # undistorting the images
     print('Undistoring the images')
-    images = os.listdir('imgs')
+    images = os.listdir('v2/imgs')
     for fname in images:
-        img = cv.imread('imgs/'+fname)
+        img = cv.imread('v2/imgs/'+fname)
         img_rows = img.shape[1]
         img_cols = img.shape[0]
         new_img_size = (int(img_rows / image_downsize_factor), int(img_cols / image_downsize_factor))
@@ -95,7 +95,7 @@ if __name__ == '__main__':
         undist_image = cv.undistort(img, mtx, dist)
         cv.imshow(fname, undist_image)
         fname = fname.split('.')
-        cv.imwrite('imgs/'+fname[0] + '_undistorted'+'.jpg', undist_image)
+        cv.imwrite('v2/imgs/'+fname[0] + '_undistorted'+'.jpg', undist_image)
 
     cv.waitKey(0)
 
