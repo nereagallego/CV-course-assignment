@@ -132,6 +132,7 @@ def triangulation(P1, P2, points1, points2):
 
     return points3D  
 
+
 # Estimate the camera pose from the Essential matrix
 def sfm(F, K_c, x1, x2, x3):
     # Compute the essential matrix
@@ -142,41 +143,45 @@ def sfm(F, K_c, x1, x2, x3):
 
     W = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]])
 
-    # Compute the four possible camera poses
-    R1 = U @ W @ V
-    R2 = U @ W.T @ V
-
-    t1 = U[:, 2]
-    t2 = -U[:, 2]
-
-    # Compute the four possible projection matrices
-    P1 = K_c @ np.hstack((np.eye(3), np.zeros((3, 1))))
-
     Ts = []
-    for R, t in zip([R1, R1, R2, R2], [t1, t2, t1, t2]):
-        if np.linalg.det(R) < 0:
-            R *= -1
-            t *= -1
-        Ts.append(np.hstack((R, t.reshape(3, 1))))
 
+    uwvt = U @ W @ V
+    uwvtn = -U @ W @ V
+
+    R_p90_t = uwvt if np.linalg.det(uwvt) > 0 else uwvtn
+
+    uwtvt = U @ W.T @ V
+    uwtvtn = -U @ W.T @ V
+
+    R_n90_t = uwtvt if np.linalg.det(uwtvt) > 0 else uwtvtn
+    t = U[:, 2]
+
+    Ts.append((R_p90_t, t.reshape(3, 1)))
+    Ts.append((R_p90_t, -t.reshape(3, 1)))
+    Ts.append((R_n90_t, t.reshape(3, 1)))
+    Ts.append((R_n90_t, -t.reshape(3, 1)))
+
+    P1 = K_c @  np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]])
     # Triangulate the points, check if the triangulation is in front of the cameras and select the best solution
     X = []
     max = 0
     best = None
     best_mask = None
-    for T in Ts:
+    for R, t in Ts:
         mask = np.zeros(x1.shape[1], dtype=bool)
-        P = K_c @ T
+        P = K_c @ np.concatenate([R, t], axis=1)
         x_3d = triangulation(P1, P, x1, x2)
         points_front = []
+        T_w_c2 = ensamble_T(R, t.flatten())
         for i in range(x_3d.shape[1]):
-            if x_3d[2,i] > 0  and np.dot(T[2, 0:3], x_3d[:3,i] - T[0:3, 3]) > 0:
+            pf2 = T_w_c2 @ x_3d[:, i]
+            if x_3d[2,i] > 0  and pf2[2] > 0:
                 mask[i] = True
-            points_front.append(x_3d[:,i])
+                points_front.append(x_3d[:,i])
         if sum(mask) > max:
             best_mask = mask
             max = len(points_front)
-            best = T
+            best = T_w_c2
             X = x_3d.T
             
     
@@ -184,17 +189,17 @@ def sfm(F, K_c, x1, x2, x3):
         print("No solution found")
         return None, None
     
-    return ensamble_T(best[0:3, 0:3], best[0:3, 3]), X, best_mask
+    return best, X, best_mask
 
 
 def crossMatrixInv(M):
-    x = [M[2, 1], M[0, 2], M[1, 0]]
+    x = np.array([M[2, 1], M[0, 2], M[1, 0]], dtype=np.float64)
     return x
 
 def crossMatrix(x):
     M = np.array([[0, -x[2], x[1]],
     [x[2], 0, -x[0]],
-    [-x[1], x[0], 0]], dtype="object")
+    [-x[1], x[0], 0]], dtype=float)
     return M
 
 
@@ -223,14 +228,14 @@ def resBundleProjection(Op, x1Data, x2Data, K_c, nPoints):
     '''
     # Bundle adjustment using least squares function
     idem = np.append(np.eye(3), np.zeros((3, 1)), axis=1)
-    R = sc.linalg.expm(crossMatrix(Op[2:5]))
-    t = np.array([np.sin(Op[0])*np.cos(Op[1]), np.sin(Op[0])*np.sin(Op[1]), np.cos(Op[0])]).reshape(-1,1)
+    R = sc.linalg.expm(crossMatrix(Op[3:6]))
+    t = np.array([Op[0], Op[1], Op[2]]).reshape(-1,1)
     theta_ext_1 = K_c @ idem
     T = np.hstack((R, t))
     theta_ext_2 =  K_c @ T #Proyection matrix
 
     # Compute the 3D points
-    X_3D = np.hstack((Op[5:].reshape(-1, 3), np.ones((nPoints, 1))))
+    X_3D = np.hstack((Op[6:].reshape(-1, 3), np.ones((nPoints, 1))))
 
     projection1 = theta_ext_1 @ X_3D.T
     projection1 = projection1[:2, :] / projection1[2, :]
@@ -277,9 +282,9 @@ def decomposeP(P):
     R = np.linalg.inv(R)
     t = t[:3] / t[3]
 
-    Tinv = ensamble_T(R, t)
-    T = Tinv
-    return K, T[0:3, 0:3], T[0:3, 3]
+    # Tw_c = ensamble_T(R, t)
+    # T = Tinv
+    return K, R, t
     
 def resBundleProjection_n_cameras(Op, xData, nCameras, K_c, nPoints):
     """
