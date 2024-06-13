@@ -157,7 +157,7 @@ if __name__ == '__main__':
 
     Op = t.flatten().tolist() + crossMatrixInv(sc.linalg.logm(R)).flatten().tolist() + X3d[:,:3].flatten().tolist()
 
-    OpOptim = scOptim.least_squares(resBundleProjection, Op, args=(kp_c1.T, kp_c3.T, Kc, kp_c1.shape[0]), method='trf', loss='huber', verbose=2)
+    OpOptim = scOptim.least_squares(resBundleProjection, Op, args=(kp_c1.T, kp_c3.T, Kc, kp_c1.shape[0]), method='trf', jac='2-point', loss='huber', verbose=2)
 
     OpOptim = OpOptim.x
 
