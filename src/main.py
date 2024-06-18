@@ -22,7 +22,7 @@ if __name__ == '__main__':
 
     # Load images
     path_folder = 'v2/imgs/'
-    path_img1 = os.path.join(path_folder, 'img_new3_undistorted.jpg')
+    path_img1 = os.path.join(path_folder, 'img_new7_undistorted.jpg')
     # path_img2 = os.path.join(path_folder, 'img_new2_undistorted.jpg')
     path_img3 = os.path.join(path_folder, 'img_new4_undistorted.jpg')
     # path_img4 = os.path.join(path_folder, 'img_new4_undistorted.jpg')
@@ -44,11 +44,11 @@ if __name__ == '__main__':
     # Load matches
     # path = './output/img_new1_undistorted_img_new2_undistorted_matches.npz'
     # npz_c1_c2 = np.load(path)
-    path = './v2/output/img_new3_undistorted_img_new4_undistorted_matches.npz'
+    path = './v2/output/img_new7_undistorted_img_new4_undistorted_matches.npz'
     npz_c1_c3 = np.load(path)
     # path = './output/img_new1_undistorted_img_new4_undistorted_matches.npz'
     # npz_c1_c4 = np.load(path)
-    path = './v2/output/img_new3_undistorted_img_old4_matches.npz'
+    path = './v2/output/img_new7_undistorted_img_old4_matches.npz'
     npz_c1_old = np.load(path)
 
 
@@ -85,6 +85,7 @@ if __name__ == '__main__':
         ax[0].imshow(img1)
         ax[0].set_title('Matches C1')
         ax[0].scatter(kp_c1[:,0], kp_c1[:,1], c='r', marker='.')
+        
 
         ax[1].imshow(img3)
         ax[1].set_title('Matches C3')
@@ -95,6 +96,15 @@ if __name__ == '__main__':
         ax[2].scatter(kp_old[:,0], kp_old[:,1], c='r', marker='.')
 
         plt.show()
+
+        for kp, img, title in [(kp_c1, img1, 'matches_C1'), (kp_c3, img3, 'matches_C2'), (kp_old, img_old, 'matches_Cold')]:
+            # Plot matches and save it
+            fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+            ax.imshow(img)
+            ax.axis('off')
+            ax.scatter(kp[:,0], kp[:,1], c='r', marker='.')
+            fig.savefig('results/figures/{}.png'.format(title), bbox_inches='tight')
+
 
     print('Number of matches after RANSAC: ', kp_c1.shape[0], kp_c3.shape[0], kp_old.shape[0])
 
@@ -117,9 +127,12 @@ if __name__ == '__main__':
 
         drawRefSystem(ax, T_w_c1, '-', 'C1')
         T_w_c3 = T_w_c1 @ np.linalg.inv(T_c3_c1)
-        drawRefSystem(ax, T_w_c3, '-', 'C3')
+        drawRefSystem(ax, T_w_c3, '-', 'C2')
         ax.scatter(X3d[:,0], X3d[:,1], X3d[:,2], c='r', marker='.')
         axisEqual3D(ax)
+
+        # Rotate the view of the 3D plot
+        ax.view_init(elev=-50, azim=-90)
         plt.show()
 
     idem = np.hstack((np.identity(3), np.zeros(3).reshape(3,1)))
@@ -150,6 +163,13 @@ if __name__ == '__main__':
         res += sum(sum(abs(kp_c3 - x3[:2].T)))
         print('Total residuals before BA: ', res/(2*len(kp_c1)))
 
+        for img, jp, x, title in [(img1, kp_c1, x1.T, 'residuals_C1_after_BA'), (img3, kp_c3, x3.T, 'residuals_C2_after_BA')]:
+            fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+            ax.imshow(img)
+            ax.axis('off')
+            plotResidual2(jp, x, 'k-', ax)
+            fig.savefig('results/figures/{}.png'.format(title), bbox_inches='tight')
+
     R = T_c3_c1[:3,:3]
     t = T_c3_c1[:3,3].reshape(3,1)
 
@@ -177,9 +197,10 @@ if __name__ == '__main__':
 
         drawRefSystem(ax, T_w_c1, '-', 'C1')
         T_w_c3 = T_w_c1 @ np.linalg.inv(T_c3_c1)
-        drawRefSystem(ax, T_w_c3, '-', 'C3')
+        drawRefSystem(ax, T_w_c3, '-', 'C2')
         ax.scatter(X3d_optim[:,0], X3d_optim[:,1], X3d_optim[:,2], c='r', marker='.')
         axisEqual3D(ax)
+        ax.view_init(elev=-50, azim=-90)
         plt.show()
 
     P3 = aux @ T_c3_c1
@@ -218,7 +239,7 @@ if __name__ == '__main__':
         plotResidual2(kp_c1, x1.T, 'k-', ax[0])
 
         ax[1].imshow(img3)
-        ax[1].set_title('Residuals C3')
+        ax[1].set_title('Residuals C2')
         plotResidual2(kp_c3, x3.T, 'k-', ax[1])
 
         ax[2].imshow(img_old)
@@ -246,17 +267,18 @@ if __name__ == '__main__':
 
         drawRefSystem(ax, T_w_c1, '-', 'C1')
         T_w_c3 = T_w_c1 @ np.linalg.inv(T_c3_c1)
-        drawRefSystem(ax, T_w_c3, '-', 'C3')
+        drawRefSystem(ax, T_w_c3, '-', 'C2')
         # T_w_old = T_w_c1 @ T_c1_cold
         drawRefSystem(ax, T_w_cold, '-', 'Old')
         # drawRefSystem(ax, np.linalg.inv(T_w_cold), '-', 'Old2')
         ax.scatter(X3d_optim[:,0], X3d_optim[:,1], X3d_optim[:,2], c='r', marker='.')
         axisEqual3D(ax)
+        ax.view_init(elev=-50, azim=-90)
         plt.show()
 
-        print('Pose C1: {}'.format(T_w_c1))
-        print('Pose C3: {}'.format(T_w_c3))
-        print('Pose Old: {}'.format(T_w_cold))
+        # print('Pose C1: {}'.format(T_w_c1))
+        # print('Pose C3: {}'.format(T_w_c3))
+        # print('Pose Old: {}'.format(T_w_cold))
 
     Pold_optim = refinePoseOldCamera(X3d_optim, kp_old, Pold)
     Kold_oltim, R_cold_c1_optim, t_cold_c1_optim = decomposeP(Pold_optim)
@@ -272,12 +294,13 @@ if __name__ == '__main__':
 
         drawRefSystem(ax, T_w_c1, '-', 'C1')
         T_w_c3 = T_w_c1 @ np.linalg.inv(T_c3_c1)
-        drawRefSystem(ax, T_w_c3, '-', 'C3')
+        drawRefSystem(ax, T_w_c3, '-', 'C2')
         # T_w_old = T_w_c1 @ T_c1_cold
         drawRefSystem(ax, T_w_cold_optim, '-', 'Old')
         # drawRefSystem(ax, np.linalg.inv(T_w_cold_optim), '-', 'Old2')
         ax.scatter(X3d_optim[:,0], X3d_optim[:,1], X3d_optim[:,2], c='r', marker='.')
         axisEqual3D(ax)
+        ax.view_init(elev=-50, azim=-90)
         plt.show()
 
     xold = Pold_optim @ X3d_optim.T
@@ -290,7 +313,7 @@ if __name__ == '__main__':
         plotResidual2(kp_c1, x1.T, 'k-', ax[0])
 
         ax[1].imshow(img3)
-        ax[1].set_title('Residuals C3')
+        ax[1].set_title('Residuals C2')
         plotResidual2(kp_c3, x3.T, 'k-', ax[1])
 
         ax[2].imshow(img_old)

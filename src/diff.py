@@ -9,9 +9,10 @@ if __name__ == '__main__':
 
     # Load th two images
     path_folder = 'v2/imgs/'
-    path_img = os.path.join(path_folder, 'img_new3_undistorted.jpg')
+    path_img = os.path.join(path_folder, 'img_new6_undistorted.jpg')
     path_old = os.path.join(path_folder, 'img_old4.jpg')
     img = cv2.imread(path_img)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img_old = cv2.imread(path_old)
 
     gray_new = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -21,7 +22,7 @@ if __name__ == '__main__':
     img_new = cv2.bilateralFilter(gray_new, 9, 75, 75)
 
     # Detect SIFT features and compute descriptors
-    path = './v2/output/img_new3_undistorted_img_old4_matches.npz'
+    path = './v2/output/img_new6_undistorted_img_old4_matches.npz'
     npz_c1_old = np.load(path)
 
     kp_c1_c1old_ = npz_c1_old['keypoints0']
@@ -54,3 +55,10 @@ if __name__ == '__main__':
     ax[2].set_title("diff")
     ax[2].imshow(colours[seg_labels], cmap='hot')
     plt.show()
+
+    for im, name in zip([thresh_old, thresh_new, colours[seg_labels]], ['target', 'warped', 'diff']):
+        fig, ax = plt.subplots(1, 1)
+        # ax.set_title(name)
+        ax.imshow(im, cmap='hot')
+        ax.axis('off')
+        fig.savefig(f'./results/figures/{name}.png', bbox_inches='tight', pad_inches=0)
